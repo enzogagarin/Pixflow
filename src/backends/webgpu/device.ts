@@ -80,3 +80,41 @@ export async function acquireDevice(options: AcquireDeviceOptions = {}): Promise
 
   return { adapter, device };
 }
+
+/**
+ * Wrap a GPUDevice with lost-tracking so subsequent operations can fail fast
+ * instead of silently queueing commands against a dead device.
+ */
+export interface TrackedDevice {
+  readonly device: GPUDevice;
+  /** True once `device.lost` has resolved. */
+  isLost(): boolean;
+  /** Throws a clear PixflowError if the device has been lost. */
+  assertAlive(): void;
+  /** Lost reason if available. */
+  lostInfo(): GPUDeviceLostInfo | null;
+}
+
+export function trackDevice(device: GPUDevice): TrackedDevice {
+  let lost: GPUDeviceLostInfo | null = null;
+  device.lost
+    .then((info) => {
+      lost = info;
+    })
+    .catch(() => {
+      /* ignore */
+    });
+  return {
+    device,
+    isLost: () => lost !== null,
+    lostInfo: () => lost,
+    assertAlive(): void {
+      if (lost) {
+        throw new PixflowError(
+          ErrorCode.DEVICE_LOST,
+          `GPU device was lost (${lost.reason ?? 'unknown'}): ${lost.message ?? ''}`,
+        );
+      }
+    },
+  };
+}

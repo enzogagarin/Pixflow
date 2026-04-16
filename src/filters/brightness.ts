@@ -31,4 +31,8 @@ export class BrightnessFilter extends ComputeFilter<BrightnessParams> {
     }
     super('brightness', params);
   }
+
+  override get isIdentity(): boolean {
+    return this.params.amount === 0;
+  }
 }

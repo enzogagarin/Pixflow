@@ -40,6 +40,16 @@ const SHAPE: ComputeFilterShape<CurvesParams> = {
 export class CurvesFilter extends ComputeFilter<CurvesParams> {
   protected readonly shape = SHAPE;
 
+  override get isIdentity(): boolean {
+    // A curve is identity iff every control point lies on y = x. Sub-sample
+    // points can still define a non-linear curve between them, but those are
+    // the only tests callers can express.
+    for (const [x, y] of this.params.points) {
+      if (Math.abs(x - y) > 1e-6) return false;
+    }
+    return true;
+  }
+
   constructor(params: CurvesParams) {
     if (!Array.isArray(params.points) || params.points.length < 1) {
       throw new PixflowError(

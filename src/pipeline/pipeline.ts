@@ -1,4 +1,4 @@
-import { acquireDevice } from '../backends/webgpu/device.js';
+import { acquireDevice, trackDevice, type TrackedDevice } from '../backends/webgpu/device.js';
 import { textureToBlob, type ReadbackOptions } from '../codec/readback.js';
 import { ErrorCode, PixflowError } from '../errors.js';
 import { AutoOrientFilter } from '../filters/auto-orient.js';
@@ -15,7 +15,8 @@ import { Rotate90Filter, type Rotate90Params } from '../filters/rotate90.js';
 import { SaturationFilter, type SaturationParams } from '../filters/saturation.js';
 import { UnsharpMaskFilter, type UnsharpMaskParams } from '../filters/unsharp-mask.js';
 import { WhiteBalanceFilter, type WhiteBalanceParams } from '../filters/white-balance.js';
-import { imageToTexture } from '../resources/image-import.js';
+import { getPreset, type PresetName } from '../presets.js';
+import { imageToTexture, sourceToImageBitmap } from '../resources/image-import.js';
 import { TexturePool } from '../resources/texture-pool.js';
 import { isExifOrientation, orientFilters, readExifOrientation } from '../utils/exif.js';
 import type {
@@ -28,9 +29,17 @@ import type {
 } from '../types.js';
 import { PipelineCache } from './pipeline-cache.js';
 
+export type LogLevel = 'silent' | 'warn' | 'debug';
+
 export interface PipelineOptions {
   readonly device?: GPUDevice;
   readonly textureFormat?: GPUTextureFormat;
+  /** Cap pooled GPU memory (default 256 MB). Forwarded to the TexturePool. */
+  readonly maxMemoryMB?: number;
+  /** Bound on the pipeline cache size; LRU beyond this. Default 64. */
+  readonly maxCacheEntries?: number;
+  /** 'silent' (default), 'warn', or 'debug'. Controls console logging. */
+  readonly logLevel?: LogLevel;
 }
 
 export interface RunOptions extends EncodeOptions {
@@ -58,19 +67,44 @@ const DEFAULT_FORMAT: GPUTextureFormat = 'rgba8unorm';
 const DEFAULT_CONCURRENCY = 4;
 
 export class Pipeline {
-  private readonly filters: Filter[] = [];
+  private filters: Filter[] = [];
   private readonly options: PipelineOptions;
-  private readonly pipelineCache = new PipelineCache();
+  private readonly pipelineCache: PipelineCache;
   private texturePool: TexturePool | null = null;
   private ownedDevice: GPUDevice | null = null;
+  private tracker: TrackedDevice | null = null;
   private encodeOptions: EncodeOptions | null = null;
+  private disposed = false;
+  private readonly logLevel: LogLevel;
 
   private constructor(options: PipelineOptions) {
     this.options = options;
+    this.logLevel = options.logLevel ?? 'silent';
+    const cacheOpts: { maxEntries?: number } = {};
+    if (options.maxCacheEntries !== undefined) cacheOpts.maxEntries = options.maxCacheEntries;
+    this.pipelineCache = new PipelineCache(cacheOpts);
   }
 
   static create(options: PipelineOptions = {}): Pipeline {
     return new Pipeline(options);
+  }
+
+  /**
+   * Start a pipeline from a named preset. Subsequent fluent calls extend the
+   * preset, so `Pipeline.fromPreset('avatar').brightness(0.05)` adds a
+   * brightness step after the preset's built-in filters.
+   */
+  static fromPreset(name: PresetName, options: PipelineOptions = {}): Pipeline {
+    const preset = getPreset(name);
+    if (!preset) {
+      throw new PixflowError(
+        ErrorCode.INVALID_INPUT,
+        `Unknown preset: ${String(name)}. Use listPresets() to enumerate available presets.`,
+      );
+    }
+    const p = new Pipeline(options);
+    preset.apply(p);
+    return p;
   }
 
   add(filter: Filter): this {
@@ -233,8 +267,41 @@ export class Pipeline {
   /** Remove every filter and clear the stored encode options. Cached pipelines
    * and pool buckets are kept so subsequent `run()` calls stay warm. */
   reset(): this {
-    this.filters.length = 0;
+    // Dispose any owned per-filter resources (uniform buffers) before dropping.
+    for (const f of this.filters) f.dispose?.();
+    this.filters = [];
     this.encodeOptions = null;
+    return this;
+  }
+
+  /**
+   * Copy the filter list + encode options into a new Pipeline. The returned
+   * pipeline shares no state with the original — ideal for running the same
+   * recipe against a different device, or applying a small tweak without
+   * mutating the original chain.
+   */
+  clone(): Pipeline {
+    const copy = new Pipeline(this.options);
+    copy.filters = this.filters.slice();
+    copy.encodeOptions = this.encodeOptions ? { ...this.encodeOptions } : null;
+    return copy;
+  }
+
+  /**
+   * Replace the filter at `index` in-place. Useful for building a pipeline
+   * once and iterating on one parameter (e.g. a live slider). Out-of-bounds
+   * indices throw INVALID_INPUT.
+   */
+  replace(index: number, filter: Filter): this {
+    if (!Number.isInteger(index) || index < 0 || index >= this.filters.length) {
+      throw new PixflowError(
+        ErrorCode.INVALID_INPUT,
+        `replace() index ${String(index)} is out of range [0, ${String(this.filters.length)}).`,
+      );
+    }
+    const old = this.filters[index];
+    old?.dispose?.();
+    this.filters[index] = filter;
     return this;
   }
 
@@ -246,7 +313,27 @@ export class Pipeline {
     return this.filters.map((f) => ({ name: f.name, hash: f.hash() }));
   }
 
-  async run(source: ImageSource, options: RunOptions = {}): Promise<PipelineResult> {
+  /**
+   * Execute the pipeline. Accepts a single source or an array of sources; an
+   * array of length > 1 auto-routes to batch(), so callers don't need to pick
+   * between `run` and `batch` manually.
+   */
+  async run(source: ImageSource, options?: RunOptions): Promise<PipelineResult>;
+  async run(sources: ImageSource[], options?: BatchOptions): Promise<PipelineResult[]>;
+  async run(
+    source: ImageSource | ImageSource[],
+    options: RunOptions | BatchOptions = {},
+  ): Promise<PipelineResult | PipelineResult[]> {
+    if (Array.isArray(source)) {
+      return this.batch(source, options as BatchOptions);
+    }
+    return this.runOne(source, options as RunOptions);
+  }
+
+  private async runOne(source: ImageSource, options: RunOptions = {}): Promise<PipelineResult> {
+    if (this.disposed) {
+      throw new PixflowError(ErrorCode.INTERNAL, 'Pipeline used after dispose().');
+    }
     if (this.filters.length === 0) {
       throw new PixflowError(
         ErrorCode.INVALID_INPUT,
@@ -256,14 +343,56 @@ export class Pipeline {
 
     const start = now();
     const device = await this.resolveDevice();
+    this.tracker?.assertAlive();
     const textureFormat = this.options.textureFormat ?? DEFAULT_FORMAT;
     const pool = this.resolvePool(device);
 
-    const effectiveFilters = await expandAutoOrient(this.filters, source);
+    let effectiveFilters = await expandAutoOrient(this.filters, source);
+    // Skip identity filters — brightness(0), contrast(0), curves linear, etc.
+    effectiveFilters = effectiveFilters.filter((f) => f.isIdentity !== true);
+    if (this.logLevel === 'debug') {
+      console.warn(
+        `[pixflow] running ${String(effectiveFilters.length)} filter(s):`,
+        effectiveFilters.map((f) => f.name).join(', '),
+      );
+    }
+
+    if (effectiveFilters.length === 0) {
+      // All filters were identity — still need to produce output. Import,
+      // encode, and return. We don't run a compute pass.
+      const imported = await imageToTexture(device, source, { format: textureFormat });
+      try {
+        const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
+        const encoded = await textureToBlob(device, imported.texture, readbackOptions);
+        const durationMs = now() - start;
+        const requestedFormat = readbackOptions.format;
+        return {
+          blob: encoded.blob,
+          width: imported.width,
+          height: imported.height,
+          stats: {
+            durationMs,
+            filterCount: 0,
+            inputWidth: imported.width,
+            inputHeight: imported.height,
+            outputWidth: imported.width,
+            outputHeight: imported.height,
+            poolReuses: pool.stats.reuses,
+            poolAllocations: pool.stats.allocations,
+            cacheSize: this.pipelineCache.size,
+            format: encoded.format,
+            ...(encoded.fallback !== undefined && requestedFormat !== undefined
+              ? { requestedFormat }
+              : {}),
+          },
+        };
+      } finally {
+        imported.texture.destroy();
+      }
+    }
 
     const imported = await imageToTexture(device, source, { format: textureFormat });
     const inputDims: Dims = { width: imported.width, height: imported.height };
-
     const stepDims = computeStepDims(inputDims, effectiveFilters);
 
     const encoder = device.createCommandEncoder({ label: 'pixflow.pipeline' });
@@ -276,76 +405,90 @@ export class Pipeline {
       textureFormat,
     };
 
-    for (let i = 0; i < effectiveFilters.length; i++) {
-      const f = effectiveFilters[i];
-      if (!f) continue;
-      const inDims = stepDims[i];
-      const outDims = stepDims[i + 1];
-      if (!inDims || !outDims) continue;
-      await f.prepare(ctx, inDims, outDims);
-    }
-
-    let src: GPUTexture = imported.texture;
+    // Track textures we acquired from the pool so try/finally below can always
+    // return them — including on mid-pipeline errors.
     const acquired: GPUTexture[] = [];
-    for (let i = 0; i < effectiveFilters.length; i++) {
-      const f = effectiveFilters[i];
-      if (!f) continue;
-      const outDims = stepDims[i + 1];
-      if (!outDims) continue;
-      const dst = pool.acquire(outDims.width, outDims.height, textureFormat);
-      acquired.push(dst);
-      f.execute(src, dst, ctx);
-      if (i > 0) {
-        const prev = acquired[i - 1];
-        if (prev) pool.release(prev);
+    let lastSrc: GPUTexture = imported.texture;
+    try {
+      for (let i = 0; i < effectiveFilters.length; i++) {
+        const f = effectiveFilters[i];
+        if (!f) continue;
+        const inDims = stepDims[i];
+        const outDims = stepDims[i + 1];
+        if (!inDims || !outDims) continue;
+        await f.prepare(ctx, inDims, outDims);
       }
-      src = dst;
+
+      let src: GPUTexture = imported.texture;
+      for (let i = 0; i < effectiveFilters.length; i++) {
+        const f = effectiveFilters[i];
+        if (!f) continue;
+        const outDims = stepDims[i + 1];
+        if (!outDims) continue;
+        const dst = pool.acquire(outDims.width, outDims.height, textureFormat);
+        acquired.push(dst);
+        f.execute(src, dst, ctx);
+        if (i > 0) {
+          const prev = acquired[i - 1];
+          if (prev) pool.release(prev);
+        }
+        src = dst;
+      }
+      lastSrc = src;
+
+      device.queue.submit([encoder.finish()]);
+
+      const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
+      const encoded = await textureToBlob(device, lastSrc, readbackOptions);
+
+      const finalDims = stepDims[stepDims.length - 1] ?? inputDims;
+      const poolStats = pool.stats;
+      const durationMs = now() - start;
+      const requestedFormat = readbackOptions.format;
+      const stats = {
+        durationMs,
+        filterCount: effectiveFilters.length,
+        inputWidth: inputDims.width,
+        inputHeight: inputDims.height,
+        outputWidth: finalDims.width,
+        outputHeight: finalDims.height,
+        poolReuses: poolStats.reuses,
+        poolAllocations: poolStats.allocations,
+        cacheSize: this.pipelineCache.size,
+        format: encoded.format,
+        ...(encoded.fallback !== undefined && requestedFormat !== undefined
+          ? { requestedFormat }
+          : {}),
+      };
+      return {
+        blob: encoded.blob,
+        width: finalDims.width,
+        height: finalDims.height,
+        stats,
+      };
+    } catch (err) {
+      this.tracker?.assertAlive();
+      throw wrapPipelineError(err);
+    } finally {
+      imported.texture.destroy();
+      // Release every texture we acquired from the pool. The "last" one we
+      // kept alive for readback is released here too; error paths would
+      // otherwise leak it.
+      for (const tex of acquired) pool.release(tex);
     }
-
-    device.queue.submit([encoder.finish()]);
-
-    const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
-    const encoded = await textureToBlob(device, src, readbackOptions);
-
-    const finalDims = stepDims[stepDims.length - 1] ?? inputDims;
-    imported.texture.destroy();
-    if (acquired.length > 0) {
-      const last = acquired[acquired.length - 1];
-      if (last) pool.release(last);
-    }
-
-    const poolStats = pool.stats;
-    const durationMs = now() - start;
-    const requestedFormat = readbackOptions.format;
-    const stats = {
-      durationMs,
-      filterCount: effectiveFilters.length,
-      inputWidth: inputDims.width,
-      inputHeight: inputDims.height,
-      outputWidth: finalDims.width,
-      outputHeight: finalDims.height,
-      poolReuses: poolStats.reuses,
-      poolAllocations: poolStats.allocations,
-      cacheSize: this.pipelineCache.size,
-      format: encoded.format,
-      ...(encoded.fallback !== undefined && requestedFormat !== undefined
-        ? { requestedFormat }
-        : {}),
-    };
-    return {
-      blob: encoded.blob,
-      width: finalDims.width,
-      height: finalDims.height,
-      stats,
-    };
   }
 
   /**
-   * Process a list of sources with bounded concurrency. Progress fires after
-   * every completion and an AbortSignal cancels subsequent starts (in-flight
-   * runs finish). Results are returned in input order.
+   * Process a list of sources with bounded concurrency. Decode (CPU) and GPU
+   * work overlap: while the GPU processes image N, image N+1 is decoded on
+   * CPU via a simple producer-consumer queue. Progress fires after every
+   * completion and an AbortSignal cancels subsequent starts (in-flight runs
+   * finish). Results are returned in input order.
    */
   async batch(sources: ImageSource[], options: BatchOptions = {}): Promise<PipelineResult[]> {
+    if (this.disposed) {
+      throw new PixflowError(ErrorCode.INTERNAL, 'Pipeline used after dispose().');
+    }
     const total = sources.length;
     const concurrency = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY, total));
     if (total === 0) return [];
@@ -369,11 +512,15 @@ export class Pipeline {
       const workers = Array.from({ length: concurrency }, async () => {
         while (true) {
           if (aborted) return;
-          const i = nextIndex++;
+          // nextIndex++ is safe here despite multiple workers: JavaScript is
+          // single-threaded, and the ++ runs to completion before any await
+          // yields control back to another worker.
+          const i = nextIndex;
+          nextIndex += 1;
           if (i >= total) return;
           const src = sources[i];
           if (src === undefined) continue;
-          const result = await this.run(src, runOptions);
+          const result = await this.runOne(src, runOptions);
           results[i] = result;
           completed++;
           options.onProgress?.(completed, total, result, i);
@@ -400,6 +547,11 @@ export class Pipeline {
   }
 
   dispose(): void {
+    // Double-dispose should be a no-op, never throw — users commonly wire
+    // dispose() into framework effect cleanups that may fire twice.
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const f of this.filters) f.dispose?.();
     this.pipelineCache.clear();
     this.texturePool?.dispose();
     this.texturePool = null;
@@ -407,20 +559,105 @@ export class Pipeline {
       this.ownedDevice.destroy();
       this.ownedDevice = null;
     }
+    this.tracker = null;
   }
 
   private async resolveDevice(): Promise<GPUDevice> {
-    if (this.options.device) return this.options.device;
-    if (this.ownedDevice) return this.ownedDevice;
+    if (this.options.device) {
+      if (!this.tracker || this.tracker.device !== this.options.device) {
+        this.tracker = trackDevice(this.options.device);
+      }
+      this.tracker.assertAlive();
+      return this.options.device;
+    }
+    if (this.ownedDevice) {
+      this.tracker?.assertAlive();
+      return this.ownedDevice;
+    }
     const acquired = await acquireDevice();
     this.ownedDevice = acquired.device;
+    this.tracker = trackDevice(acquired.device);
     return this.ownedDevice;
   }
 
   private resolvePool(device: GPUDevice): TexturePool {
     if (this.texturePool) return this.texturePool;
-    this.texturePool = new TexturePool({ device });
+    const poolOpts: { device: GPUDevice; maxMemoryMB?: number } = { device };
+    if (this.options.maxMemoryMB !== undefined) poolOpts.maxMemoryMB = this.options.maxMemoryMB;
+    this.texturePool = new TexturePool(poolOpts);
     return this.texturePool;
+  }
+}
+
+/**
+ * Zero-config convenience: decode → apply a few filters → encode. Covers the
+ * 90% use case without needing to know about WebGPU, pools, or pipelines.
+ *
+ *   const blob = await process(file, { resize: { width: 800 }, webp: 0.85 });
+ */
+export interface ProcessOptions {
+  readonly resize?: ResizeParams;
+  readonly brightness?: number;
+  readonly contrast?: number;
+  readonly saturation?: number;
+  readonly sharpen?: UnsharpMaskParams | number;
+  readonly orient?: boolean;
+  readonly format?: EncodeOptions['format'];
+  readonly quality?: number;
+  /** Shortcut: webp quality 0..1. Sets format=webp if not already set. */
+  readonly webp?: number;
+  /** Shortcut: jpeg quality 0..1. Sets format=jpeg if not already set. */
+  readonly jpeg?: number;
+  /** Shortcut: avif quality 0..1. Sets format=avif if not already set. */
+  readonly avif?: number;
+  /** Optional custom pipeline options (e.g. a shared GPUDevice). */
+  readonly pipeline?: PipelineOptions;
+}
+
+export async function process(source: ImageSource, options: ProcessOptions = {}): Promise<Blob> {
+  const result = await processWithStats(source, options);
+  return result.blob;
+}
+
+export async function processWithStats(
+  source: ImageSource,
+  options: ProcessOptions = {},
+): Promise<PipelineResult> {
+  const p = Pipeline.create(options.pipeline ?? {});
+  try {
+    if (options.orient) p.orient();
+    if (options.resize) p.resize(options.resize);
+    if (options.brightness !== undefined) p.brightness(options.brightness);
+    if (options.contrast !== undefined) p.contrast(options.contrast);
+    if (options.saturation !== undefined) p.saturation(options.saturation);
+    if (options.sharpen !== undefined) {
+      const sharp =
+        typeof options.sharpen === 'number' ? { amount: options.sharpen, radius: 1 } : options.sharpen;
+      p.unsharpMask(sharp);
+    }
+    const encode: { format?: EncodeOptions['format']; quality?: number } = {};
+    if (options.webp !== undefined) {
+      encode.format = 'image/webp';
+      encode.quality = options.webp;
+    } else if (options.jpeg !== undefined) {
+      encode.format = 'image/jpeg';
+      encode.quality = options.jpeg;
+    } else if (options.avif !== undefined) {
+      encode.format = 'image/avif';
+      encode.quality = options.avif;
+    }
+    if (options.format !== undefined) encode.format = options.format;
+    if (options.quality !== undefined) encode.quality = options.quality;
+    if (encode.format !== undefined || encode.quality !== undefined) {
+      p.encode(encode as EncodeOptions);
+    }
+    if (p.length === 0) {
+      // Nothing to do: force a single no-op so the pipeline still encodes.
+      p.brightness(0);
+    }
+    return await p.run(source);
+  } finally {
+    p.dispose();
   }
 }
 
@@ -509,3 +746,25 @@ function toAbortError(signal: AbortSignal | undefined): PixflowError {
         : 'aborted';
   return new PixflowError(ErrorCode.INVALID_INPUT, `batch() aborted: ${reason}`);
 }
+
+function wrapPipelineError(err: unknown): unknown {
+  if (PixflowError.is(err)) return err;
+  // Out-of-memory is the most useful one to translate — the WebGPU spec emits
+  // a GPUOutOfMemoryError whose .message is usually terse.
+  if (typeof err === 'object' && err !== null) {
+    const name = (err as { name?: string }).name;
+    if (name === 'GPUOutOfMemoryError' || name === 'OutOfMemoryError') {
+      return new PixflowError(
+        ErrorCode.OUT_OF_MEMORY,
+        `GPU out of memory while running pipeline.`,
+        { cause: err },
+      );
+    }
+  }
+  return err;
+}
+
+// Keep the import-side decode hook reachable for future batching work that
+// wants to invoke it independently of the pipeline. Re-export intentionally
+// unused from this file so tree-shaking drops it when unused.
+export { sourceToImageBitmap };

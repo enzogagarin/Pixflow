@@ -18,6 +18,25 @@ export class UnsharpMaskFilter implements Filter<UnsharpMaskParams> {
   readonly stage = 'compute' as const;
   readonly params: UnsharpMaskParams;
 
+  get isIdentity(): boolean {
+    return this.params.amount === 0;
+  }
+
+  dispose(): void {
+    this.hUniform?.destroy();
+    this.vUniform?.destroy();
+    this.combineUniform?.destroy();
+    this.hUniform = null;
+    this.vUniform = null;
+    this.combineUniform = null;
+    this.blurPipeline = null;
+    this.combinePipeline = null;
+    this.blurLayout = null;
+    this.combineLayout = null;
+    this.cachedBlurLayout = null;
+    this.cachedCombineLayout = null;
+  }
+
   private blurPipeline: GPUComputePipeline | null = null;
   private blurLayout: GPUBindGroupLayout | null = null;
   private combinePipeline: GPUComputePipeline | null = null;
@@ -89,9 +108,9 @@ export class UnsharpMaskFilter implements Filter<UnsharpMaskParams> {
       },
     );
 
-    this.hUniform = this.writeBlurUniform(ctx, 1, 0, invTwoSigmaSq);
-    this.vUniform = this.writeBlurUniform(ctx, 0, 1, invTwoSigmaSq);
-    this.combineUniform = this.writeCombineUniform(ctx);
+    this.hUniform = this.writeBlurUniform(ctx, 1, 0, invTwoSigmaSq, this.hUniform);
+    this.vUniform = this.writeBlurUniform(ctx, 0, 1, invTwoSigmaSq, this.vUniform);
+    this.combineUniform = this.writeCombineUniform(ctx, this.combineUniform);
   }
 
   execute(input: GPUTexture, output: GPUTexture, ctx: ExecutionContext): void {
@@ -173,12 +192,17 @@ export class UnsharpMaskFilter implements Filter<UnsharpMaskParams> {
     dirX: number,
     dirY: number,
     invTwoSigmaSq: number,
+    existing: GPUBuffer | null,
   ): GPUBuffer {
     const size = alignTo(BLUR_UNIFORM_BYTES, 16);
-    const buf = ctx.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const buf =
+      existing && existing.size >= size
+        ? existing
+        : ctx.device.createBuffer({
+            size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+    if (existing && existing !== buf) existing.destroy();
     const bytes = new ArrayBuffer(size);
     const view = new DataView(bytes);
     view.setFloat32(0, dirX, true);
@@ -189,12 +213,16 @@ export class UnsharpMaskFilter implements Filter<UnsharpMaskParams> {
     return buf;
   }
 
-  private writeCombineUniform(ctx: ExecutionContext): GPUBuffer {
+  private writeCombineUniform(ctx: ExecutionContext, existing: GPUBuffer | null): GPUBuffer {
     const size = alignTo(COMBINE_UNIFORM_BYTES, 16);
-    const buf = ctx.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const buf =
+      existing && existing.size >= size
+        ? existing
+        : ctx.device.createBuffer({
+            size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+    if (existing && existing !== buf) existing.destroy();
     const bytes = new ArrayBuffer(size);
     const view = new DataView(bytes);
     view.setFloat32(0, this.params.amount, true);

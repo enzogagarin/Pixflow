@@ -30,6 +30,10 @@ const SHAPE: ComputeFilterShape<WhiteBalanceParams> = {
 export class WhiteBalanceFilter extends ComputeFilter<WhiteBalanceParams> {
   protected readonly shape = SHAPE;
 
+  override get isIdentity(): boolean {
+    return (this.params.temperature ?? 0) === 0 && (this.params.tint ?? 0) === 0;
+  }
+
   constructor(params: WhiteBalanceParams) {
     if (params.temperature !== undefined) {
       if (!Number.isFinite(params.temperature) || params.temperature < -1 || params.temperature > 1) {

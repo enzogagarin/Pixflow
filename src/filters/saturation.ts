@@ -31,4 +31,8 @@ export class SaturationFilter extends ComputeFilter<SaturationParams> {
     }
     super('saturation', params);
   }
+
+  override get isIdentity(): boolean {
+    return this.params.amount === 0;
+  }
 }

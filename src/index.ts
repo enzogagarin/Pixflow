@@ -1,12 +1,23 @@
-export { Pipeline } from './pipeline/pipeline.js';
-export type { PipelineOptions, RunOptions, BatchOptions } from './pipeline/pipeline.js';
+export { Pipeline, process, processWithStats } from './pipeline/pipeline.js';
+export type {
+  PipelineOptions,
+  RunOptions,
+  BatchOptions,
+  ProcessOptions,
+  LogLevel,
+} from './pipeline/pipeline.js';
 export { PipelineCache } from './pipeline/pipeline-cache.js';
+export type { PipelineCacheOptions } from './pipeline/pipeline-cache.js';
 
 export { PixflowError, ErrorCode } from './errors.js';
 export type { ErrorCodeValue, PixflowErrorOptions } from './errors.js';
 
-export { acquireDevice, isWebGPUSupported } from './backends/webgpu/device.js';
-export type { AcquireDeviceOptions, AcquiredDevice } from './backends/webgpu/device.js';
+export { acquireDevice, isWebGPUSupported, trackDevice } from './backends/webgpu/device.js';
+export type {
+  AcquireDeviceOptions,
+  AcquiredDevice,
+  TrackedDevice,
+} from './backends/webgpu/device.js';
 
 export {
   imageToTexture,

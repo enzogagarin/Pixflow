@@ -48,6 +48,12 @@ export interface Filter<Params = unknown> {
   execute(input: GPUTexture, output: GPUTexture, ctx: ExecutionContext): void;
   hash(): string;
   outputSize?(inputDims: Dims): Dims;
+  /** True when the filter's parameters would produce a no-op. Pipelines can
+   * skip preparing and executing the filter entirely. Optional. */
+  readonly isIdentity?: boolean;
+  /** Release owned GPU resources (uniform buffers etc.). Safe to call
+   * multiple times; the pipeline invokes this on dispose(). Optional. */
+  dispose?(): void;
 }
 
 export interface PipelineStats {

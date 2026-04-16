@@ -93,6 +93,7 @@ export class ResizeFilter implements Filter<ResizeParams> {
       { width: output.width, height: input.height },
       input.width,
       output.width,
+      this.horizontalPass?.uniformBuffer,
     );
     this.verticalPass = this.makePass(
       ctx,
@@ -103,7 +104,18 @@ export class ResizeFilter implements Filter<ResizeParams> {
       output,
       input.height,
       output.height,
+      this.verticalPass?.uniformBuffer,
     );
+  }
+
+  dispose(): void {
+    this.horizontalPass?.uniformBuffer.destroy();
+    this.verticalPass?.uniformBuffer.destroy();
+    this.horizontalPass = null;
+    this.verticalPass = null;
+    this.cachedLayout = null;
+    this.sourceDims = null;
+    this.targetDims = null;
   }
 
   execute(input: GPUTexture, output: GPUTexture, ctx: ExecutionContext): void {
@@ -157,6 +169,7 @@ export class ResizeFilter implements Filter<ResizeParams> {
     outDims: Dims,
     inAxis: number,
     outAxis: number,
+    existing: GPUBuffer | undefined,
   ): PreparedPass {
     const ratio = inAxis / outAxis;
     const scale = Math.max(ratio, 1);
@@ -164,11 +177,15 @@ export class ResizeFilter implements Filter<ResizeParams> {
     const taps = Math.max(2, Math.ceil(support * 2));
 
     const size = alignTo(UNIFORM_BYTES, 16);
-    const buf = ctx.device.createBuffer({
-      label: 'pixflow.resize.uniforms',
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const buf =
+      existing && existing.size >= size
+        ? existing
+        : ctx.device.createBuffer({
+            label: 'pixflow.resize.uniforms',
+            size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+    if (existing && existing !== buf) existing.destroy();
     const bytes = new ArrayBuffer(size);
     const view = new DataView(bytes);
     view.setFloat32(0, axis[0], true);

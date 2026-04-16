@@ -25,6 +25,18 @@ export class GaussianBlurFilter implements Filter<GaussianBlurParams> {
   private vertical: PreparedPass | null = null;
   private cachedLayout: GPUBindGroupLayout | null = null;
 
+  get isIdentity(): boolean {
+    return this.params.radius === 0;
+  }
+
+  dispose(): void {
+    this.horizontal?.uniformBuffer.destroy();
+    this.vertical?.uniformBuffer.destroy();
+    this.horizontal = null;
+    this.vertical = null;
+    this.cachedLayout = null;
+  }
+
   constructor(params: GaussianBlurParams) {
     if (!Number.isFinite(params.radius) || params.radius < 0 || params.radius > 64) {
       throw new PixflowError(
@@ -60,8 +72,24 @@ export class GaussianBlurFilter implements Filter<GaussianBlurParams> {
       this.createPipeline(ctx, layout),
     );
 
-    this.horizontal = this.makePass(ctx, pipeline, layout, 1, 0, invTwoSigmaSq);
-    this.vertical = this.makePass(ctx, pipeline, layout, 0, 1, invTwoSigmaSq);
+    this.horizontal = this.makePass(
+      ctx,
+      pipeline,
+      layout,
+      1,
+      0,
+      invTwoSigmaSq,
+      this.horizontal?.uniformBuffer,
+    );
+    this.vertical = this.makePass(
+      ctx,
+      pipeline,
+      layout,
+      0,
+      1,
+      invTwoSigmaSq,
+      this.vertical?.uniformBuffer,
+    );
   }
 
   execute(input: GPUTexture, output: GPUTexture, ctx: ExecutionContext): void {
@@ -116,13 +144,18 @@ export class GaussianBlurFilter implements Filter<GaussianBlurParams> {
     dirX: number,
     dirY: number,
     invTwoSigmaSq: number,
+    existing: GPUBuffer | undefined,
   ): PreparedPass {
     const size = alignTo(UNIFORM_BYTES, 16);
-    const buf = ctx.device.createBuffer({
-      label: 'pixflow.gaussianBlur.uniforms',
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const buf =
+      existing && existing.size >= size
+        ? existing
+        : ctx.device.createBuffer({
+            label: 'pixflow.gaussianBlur.uniforms',
+            size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+    if (existing && existing !== buf) existing.destroy();
     const bytes = new ArrayBuffer(size);
     const view = new DataView(bytes);
     view.setFloat32(0, dirX, true);

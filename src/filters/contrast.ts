@@ -31,4 +31,8 @@ export class ContrastFilter extends ComputeFilter<ContrastParams> {
     }
     super('contrast', params);
   }
+
+  override get isIdentity(): boolean {
+    return this.params.amount === 0;
+  }
 }

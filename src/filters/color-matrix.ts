@@ -76,6 +76,17 @@ export class ColorMatrixFilter extends ComputeFilter<ColorMatrixParams> {
     }
     super('colorMatrix', params);
   }
+
+  override get isIdentity(): boolean {
+    const bias = this.params.bias ?? [0, 0, 0, 0];
+    if (bias.some((v) => v !== 0)) return false;
+    const m = this.params.matrix;
+    for (let i = 0; i < 16; i++) {
+      const expected = i % 5 === 0 ? 1 : 0;
+      if (m[i] !== expected) return false;
+    }
+    return true;
+  }
 }
 
 /** Identity 4x4 matrix — handy for tests and as a starting point for tweaks. */

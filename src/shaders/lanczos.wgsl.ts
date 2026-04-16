@@ -17,7 +17,12 @@ struct Params {
 
 const A: f32 = 3.0;
 const PI: f32 = 3.14159265358979;
-const MAX_TAPS: i32 = 96;
+// Lanczos-3 with scale s has support radius 3·s; tap count is ceil(6·s).
+// A 48-tap limit covers scales up to ≈8× downscale, which already produces
+// visibly poor aliasing on photography — callers wanting more should resize
+// in two stages. Shrinking this from 96 removes half the unused iterations
+// the WGSL compiler would otherwise budget registers for.
+const MAX_TAPS: i32 = 48;
 
 fn sinc(x: f32) -> f32 {
   if (abs(x) < 1e-6) { return 1.0; }

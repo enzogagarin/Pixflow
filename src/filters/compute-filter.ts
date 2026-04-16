@@ -20,8 +20,18 @@ export abstract class ComputeFilter<Params> implements Filter<Params> {
   private cachedLayout: GPUBindGroupLayout | null = null;
   private cachedPipeline: GPUComputePipeline | null = null;
   private uniformBuffer: GPUBuffer | null = null;
+  private uniformSize = 0;
 
   protected abstract readonly shape: ComputeFilterShape<Params>;
+
+  /**
+   * When true, the pipeline treats execute() as a no-op identity pass and
+   * skips scheduling it entirely. Subclasses set this for param values that
+   * would produce a degenerate shader (e.g. brightness(0), contrast(0)).
+   */
+  get isIdentity(): boolean {
+    return false;
+  }
 
   constructor(name: string, params: Params) {
     this.name = name;
@@ -55,12 +65,17 @@ export abstract class ComputeFilter<Params> implements Filter<Params> {
 
     if (this.shape.uniformByteLength > 0) {
       const aligned = alignTo(this.shape.uniformByteLength, 16);
-      if (!this.uniformBuffer || this.uniformBuffer.size < aligned) {
+      // Reuse the buffer when the required size is the same or smaller — this
+      // avoids leaking one uniform buffer per filter per run() in batch mode,
+      // and keeps driver churn low.
+      if (!this.uniformBuffer || this.uniformSize < aligned) {
+        if (this.uniformBuffer) this.uniformBuffer.destroy();
         this.uniformBuffer = ctx.device.createBuffer({
           label: `pixflow.${this.name}.uniforms`,
           size: aligned,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
+        this.uniformSize = aligned;
       }
       const bytes = new ArrayBuffer(aligned);
       this.shape.writeUniforms(new DataView(bytes), this.params, inputDims, outputDims);
@@ -97,6 +112,17 @@ export abstract class ComputeFilter<Params> implements Filter<Params> {
     const groupsY = Math.ceil(output.height / WORKGROUP_SIZE);
     pass.dispatchWorkgroups(groupsX, groupsY, 1);
     pass.end();
+  }
+
+  /** Release any owned GPU resources. Safe to call multiple times. */
+  dispose(): void {
+    if (this.uniformBuffer) {
+      this.uniformBuffer.destroy();
+      this.uniformBuffer = null;
+      this.uniformSize = 0;
+    }
+    this.cachedLayout = null;
+    this.cachedPipeline = null;
   }
 
   private bindGroupLayout(ctx: ExecutionContext): GPUBindGroupLayout {
