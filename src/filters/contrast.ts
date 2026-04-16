@@ -11,7 +11,7 @@ const SHAPE: ComputeFilterShape<ContrastParams> = {
   wgsl: CONTRAST_WGSL,
   entryPoint: 'main',
   uniformByteLength: 4,
-  writeUniforms(view, params) {
+  writeUniforms(view, params): void {
     view.setFloat32(0, params.amount, true);
   },
   hashSuffix(params) {

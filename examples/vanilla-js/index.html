@@ -3,14 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>pixflow · Week 1-2 prototype</title>
+    <title>pixflow · Week 3-5 demo</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main>
       <header>
         <h1>pixflow</h1>
-        <p class="tagline">WebGPU image pipeline · Week 1-2 prototype</p>
+        <p class="tagline">
+          WebGPU image pipeline · Week 3-5: Lanczos resize, color &amp; geometric filters, pooled
+          memory
+        </p>
       </header>
 
       <section id="status-panel">
@@ -23,27 +26,107 @@
           <span>Choose an image</span>
         </label>
 
-        <div class="slider-row">
-          <label for="brightness">Brightness</label>
-          <input type="range" id="brightness" min="-100" max="100" step="1" value="20" />
-          <output id="brightness-value">+20</output>
-        </div>
+        <fieldset class="group">
+          <legend>Resize (Lanczos-3)</legend>
+          <div class="slider-row">
+            <label for="resize-enabled">Enabled</label>
+            <input type="checkbox" id="resize-enabled" checked />
+            <output></output>
+          </div>
+          <div class="slider-row">
+            <label for="resize-width">Target width</label>
+            <input type="range" id="resize-width" min="64" max="2048" step="16" value="800" />
+            <output id="resize-width-value">800</output>
+          </div>
+          <div class="slider-row">
+            <label for="resize-fit">Fit mode</label>
+            <select id="resize-fit">
+              <option value="contain" selected>contain</option>
+              <option value="cover">cover</option>
+              <option value="fill">fill</option>
+              <option value="inside">inside</option>
+              <option value="outside">outside</option>
+            </select>
+            <output></output>
+          </div>
+        </fieldset>
 
-        <div class="slider-row">
-          <label for="contrast">Contrast</label>
-          <input type="range" id="contrast" min="-100" max="100" step="1" value="0" />
-          <output id="contrast-value">0</output>
-        </div>
+        <fieldset class="group">
+          <legend>Color</legend>
+          <div class="slider-row">
+            <label for="brightness">Brightness</label>
+            <input type="range" id="brightness" min="-100" max="100" step="1" value="0" />
+            <output id="brightness-value">0</output>
+          </div>
+          <div class="slider-row">
+            <label for="contrast">Contrast</label>
+            <input type="range" id="contrast" min="-100" max="100" step="1" value="0" />
+            <output id="contrast-value">0</output>
+          </div>
+          <div class="slider-row">
+            <label for="saturation">Saturation</label>
+            <input type="range" id="saturation" min="-100" max="100" step="1" value="0" />
+            <output id="saturation-value">0</output>
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Quality</legend>
+          <div class="slider-row">
+            <label for="blur">Gaussian blur</label>
+            <input type="range" id="blur" min="0" max="20" step="1" value="0" />
+            <output id="blur-value">0</output>
+          </div>
+          <div class="slider-row">
+            <label for="sharpen-amount">Unsharp amount</label>
+            <input type="range" id="sharpen-amount" min="0" max="200" step="1" value="0" />
+            <output id="sharpen-amount-value">0%</output>
+          </div>
+          <div class="slider-row">
+            <label for="sharpen-radius">Unsharp radius</label>
+            <input type="range" id="sharpen-radius" min="1" max="10" step="1" value="1" />
+            <output id="sharpen-radius-value">1</output>
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Geometric</legend>
+          <div class="slider-row">
+            <label for="rotate">Rotate</label>
+            <select id="rotate">
+              <option value="0" selected>0°</option>
+              <option value="1">90° CW</option>
+              <option value="2">180°</option>
+              <option value="3">270° CW</option>
+            </select>
+            <output></output>
+          </div>
+          <div class="slider-row">
+            <label for="flip">Flip</label>
+            <select id="flip">
+              <option value="none" selected>none</option>
+              <option value="h">horizontal</option>
+              <option value="v">vertical</option>
+              <option value="both">both</option>
+            </select>
+            <output></output>
+          </div>
+          <div class="slider-row">
+            <label for="orient">EXIF orient</label>
+            <input type="checkbox" id="orient" checked />
+            <output>auto-detect</output>
+          </div>
+        </fieldset>
 
         <div class="button-row">
           <button id="apply" disabled>Apply pipeline</button>
+          <button id="batch" disabled>Run 10x batch</button>
           <button id="download" disabled>Download result</button>
         </div>
 
         <p class="hint">
-          The pipeline runs
-          <code>.brightness(amount/100).contrast(amount/100)</code> on your device's GPU. Nothing
-          uploads to a server.
+          The pipeline runs entirely on your GPU. Texture pool + pipeline cache mean repeat runs
+          allocate zero new GPU memory. Nothing uploads to a server.
         </p>
       </section>
 

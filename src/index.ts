@@ -1,5 +1,6 @@
 export { Pipeline } from './pipeline/pipeline.js';
 export type { PipelineOptions, RunOptions } from './pipeline/pipeline.js';
+export { PipelineCache } from './pipeline/pipeline-cache.js';
 
 export { PixflowError, ErrorCode } from './errors.js';
 export type { ErrorCodeValue, PixflowErrorOptions } from './errors.js';
@@ -14,24 +15,63 @@ export {
 } from './resources/image-import.js';
 export type { ImportedImage } from './resources/image-import.js';
 
+export { TexturePool } from './resources/texture-pool.js';
+export type { TexturePoolOptions } from './resources/texture-pool.js';
+
 export { textureToBlob, textureToCanvas } from './codec/readback.js';
 export type { ReadbackOptions } from './codec/readback.js';
 
 export {
   BrightnessFilter,
   ContrastFilter,
+  SaturationFilter,
+  GaussianBlurFilter,
+  UnsharpMaskFilter,
+  ResizeFilter,
+  CropFilter,
+  Rotate90Filter,
+  FlipFilter,
+  PadFilter,
   ComputeFilter,
+  computeResizedDims,
   WORKGROUP_SIZE,
+  alignTo,
 } from './filters/index.js';
-export type { BrightnessParams, ContrastParams, ComputeFilterShape } from './filters/index.js';
+export type {
+  BrightnessParams,
+  ContrastParams,
+  SaturationParams,
+  GaussianBlurParams,
+  UnsharpMaskParams,
+  ResizeParams,
+  ResizeFit,
+  CropParams,
+  Rotate90Params,
+  FlipParams,
+  FlipAxis,
+  PadParams,
+  PadColor,
+  ComputeFilterShape,
+} from './filters/index.js';
+
+export {
+  isExifOrientation,
+  orientFilters,
+  readExifOrientation,
+} from './utils/exif.js';
+export type { ExifOrientation } from './utils/exif.js';
 
 export type {
+  Dims,
   EncodeOptions,
   ExecutionContext,
   Filter,
   FilterPipeline,
   FilterStage,
   ImageSource,
+  PipelineCacheLike,
   PipelineResult,
   PipelineStats,
+  TexturePoolLike,
+  TexturePoolStats,
 } from './types.js';

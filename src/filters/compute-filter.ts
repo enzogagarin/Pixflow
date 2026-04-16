@@ -1,5 +1,5 @@
 import { ErrorCode, PixflowError } from '../errors.js';
-import type { ExecutionContext, Filter, FilterPipeline } from '../types.js';
+import type { Dims, ExecutionContext, Filter } from '../types.js';
 
 export const WORKGROUP_SIZE = 8;
 
@@ -8,7 +8,7 @@ export interface ComputeFilterShape<Params> {
   readonly wgsl: string;
   readonly entryPoint?: string;
   readonly uniformByteLength: number;
-  writeUniforms(view: DataView, params: Params): void;
+  writeUniforms(view: DataView, params: Params, inputDims: Dims, outputDims: Dims): void;
   hashSuffix(params: Params): string;
 }
 
@@ -17,7 +17,8 @@ export abstract class ComputeFilter<Params> implements Filter<Params> {
   readonly params: Params;
   readonly stage = 'compute' as const;
 
-  private prepared: FilterPipeline | null = null;
+  private cachedLayout: GPUBindGroupLayout | null = null;
+  private cachedPipeline: GPUComputePipeline | null = null;
   private uniformBuffer: GPUBuffer | null = null;
 
   protected abstract readonly shape: ComputeFilterShape<Params>;
@@ -31,99 +32,104 @@ export abstract class ComputeFilter<Params> implements Filter<Params> {
     return `${this.name}|${this.shape.hashSuffix(this.params)}`;
   }
 
-  async prepare(ctx: ExecutionContext): Promise<FilterPipeline> {
-    if (this.prepared) return this.prepared;
+  async prepare(ctx: ExecutionContext, inputDims: Dims, outputDims: Dims): Promise<void> {
+    if (!this.cachedLayout) {
+      this.cachedLayout = this.bindGroupLayout(ctx);
+    }
+    const layout = this.cachedLayout;
 
-    const cacheKey = this.hash();
-    const cached = ctx.pipelineCache.get(cacheKey);
-    const module = ctx.device.createShaderModule({
-      label: `pixflow.${this.name}.module`,
-      code: this.shape.wgsl,
-    });
-
-    const bindGroupLayout = ctx.device.createBindGroupLayout({
-      label: `pixflow.${this.name}.bgl`,
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.COMPUTE,
-          texture: { sampleType: 'float', viewDimension: '2d', multisampled: false },
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.COMPUTE,
-          storageTexture: {
-            access: 'write-only',
-            format: ctx.textureFormat,
-            viewDimension: '2d',
-          },
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: 'uniform' },
-        },
-      ],
-    });
-
-    const pipeline =
-      cached ??
-      ctx.device.createComputePipeline({
-        label: `pixflow.${this.name}.pipeline`,
-        layout: ctx.device.createPipelineLayout({
-          bindGroupLayouts: [bindGroupLayout],
-        }),
-        compute: {
-          module,
-          entryPoint: this.shape.entryPoint ?? 'main',
-        },
+    // Pipelines key on shader name + format only — multiple filter instances with
+    // the same shader but different params share one compiled pipeline.
+    const pipelineKey = `${this.shape.name}|${ctx.textureFormat}`;
+    this.cachedPipeline = ctx.pipelineCache.getOrCreate(pipelineKey, () => {
+      const module = ctx.device.createShaderModule({
+        label: `pixflow.${this.name}.module`,
+        code: this.shape.wgsl,
       });
-
-    ctx.pipelineCache.set(cacheKey, pipeline);
+      return ctx.device.createComputePipeline({
+        label: `pixflow.${this.name}.pipeline`,
+        layout: ctx.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        compute: { module, entryPoint: this.shape.entryPoint ?? 'main' },
+      });
+    });
 
     if (this.shape.uniformByteLength > 0) {
-      this.uniformBuffer = ctx.device.createBuffer({
-        label: `pixflow.${this.name}.uniforms`,
-        size: alignTo(this.shape.uniformByteLength, 16),
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      const bytes = new ArrayBuffer(alignTo(this.shape.uniformByteLength, 16));
-      this.shape.writeUniforms(new DataView(bytes), this.params);
+      const aligned = alignTo(this.shape.uniformByteLength, 16);
+      if (!this.uniformBuffer || this.uniformBuffer.size < aligned) {
+        this.uniformBuffer = ctx.device.createBuffer({
+          label: `pixflow.${this.name}.uniforms`,
+          size: aligned,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+      }
+      const bytes = new ArrayBuffer(aligned);
+      this.shape.writeUniforms(new DataView(bytes), this.params, inputDims, outputDims);
       ctx.queue.writeBuffer(this.uniformBuffer, 0, bytes);
     }
-
-    this.prepared = { pipeline, bindGroupLayout };
-    return this.prepared;
   }
 
   execute(input: GPUTexture, output: GPUTexture, ctx: ExecutionContext): void {
-    if (!this.prepared || !this.uniformBuffer) {
+    if (!this.cachedPipeline || !this.cachedLayout) {
       throw new PixflowError(
         ErrorCode.INTERNAL,
         `Filter "${this.name}" was executed before prepare() completed.`,
       );
     }
 
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: input.createView() },
+      { binding: 1, resource: output.createView() },
+    ];
+    if (this.uniformBuffer) {
+      entries.push({ binding: 2, resource: { buffer: this.uniformBuffer } });
+    }
+
     const bindGroup = ctx.device.createBindGroup({
       label: `pixflow.${this.name}.bg`,
-      layout: this.prepared.bindGroupLayout,
-      entries: [
-        { binding: 0, resource: input.createView() },
-        { binding: 1, resource: output.createView() },
-        { binding: 2, resource: { buffer: this.uniformBuffer } },
-      ],
+      layout: this.cachedLayout,
+      entries,
     });
 
     const pass = ctx.encoder.beginComputePass({ label: `pixflow.${this.name}.pass` });
-    pass.setPipeline(this.prepared.pipeline);
+    pass.setPipeline(this.cachedPipeline);
     pass.setBindGroup(0, bindGroup);
     const groupsX = Math.ceil(output.width / WORKGROUP_SIZE);
     const groupsY = Math.ceil(output.height / WORKGROUP_SIZE);
     pass.dispatchWorkgroups(groupsX, groupsY, 1);
     pass.end();
   }
+
+  private bindGroupLayout(ctx: ExecutionContext): GPUBindGroupLayout {
+    const entries: GPUBindGroupLayoutEntry[] = [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: 'float', viewDimension: '2d', multisampled: false },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: {
+          access: 'write-only',
+          format: ctx.textureFormat,
+          viewDimension: '2d',
+        },
+      },
+    ];
+    if (this.shape.uniformByteLength > 0) {
+      entries.push({
+        binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform' },
+      });
+    }
+    return ctx.device.createBindGroupLayout({
+      label: `pixflow.${this.name}.bgl`,
+      entries,
+    });
+  }
 }
 
-function alignTo(value: number, alignment: number): number {
+export function alignTo(value: number, alignment: number): number {
   return Math.ceil(value / alignment) * alignment;
 }
