@@ -13,5 +13,18 @@ export { CropFilter, type CropParams } from './crop.js';
 export { Rotate90Filter, type Rotate90Params } from './rotate90.js';
 export { FlipFilter, type FlipParams, type FlipAxis } from './flip.js';
 export { PadFilter, type PadParams, type PadColor } from './pad.js';
+export { CurvesFilter, buildLut, type CurvesParams, type CurvePoint } from './curves.js';
+export {
+  WhiteBalanceFilter,
+  computeGain,
+  type WhiteBalanceParams,
+} from './white-balance.js';
+export {
+  ColorMatrixFilter,
+  IDENTITY_MATRIX,
+  GRAYSCALE_MATRIX,
+  SEPIA_MATRIX,
+  type ColorMatrixParams,
+} from './color-matrix.js';
 export { ComputeFilter, WORKGROUP_SIZE, alignTo } from './compute-filter.js';
 export type { ComputeFilterShape } from './compute-filter.js';

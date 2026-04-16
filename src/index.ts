@@ -40,8 +40,16 @@ export {
   Rotate90Filter,
   FlipFilter,
   PadFilter,
+  CurvesFilter,
+  WhiteBalanceFilter,
+  ColorMatrixFilter,
   ComputeFilter,
   computeResizedDims,
+  buildLut,
+  computeGain,
+  IDENTITY_MATRIX,
+  GRAYSCALE_MATRIX,
+  SEPIA_MATRIX,
   WORKGROUP_SIZE,
   alignTo,
 } from './filters/index.js';
@@ -60,6 +68,10 @@ export type {
   FlipAxis,
   PadParams,
   PadColor,
+  CurvesParams,
+  CurvePoint,
+  WhiteBalanceParams,
+  ColorMatrixParams,
   ComputeFilterShape,
 } from './filters/index.js';
 

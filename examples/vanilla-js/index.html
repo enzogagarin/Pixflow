@@ -3,34 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>pixflow · Week 6-8 demo</title>
+    <title>pixflow · WebGPU image pipelines in the browser</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main>
       <header>
-        <h1>pixflow</h1>
+        <div class="brand">
+          <span class="logo">▤</span>
+          <h1>pixflow</h1>
+          <span class="version">v0.1</span>
+        </div>
         <p class="tagline">
-          WebGPU image pipeline · Week 6-8: encoding, batch API, EXIF orient, real-world presets
+          WebGPU image pipelines, in the browser. Drop images, pick a preset,
+          watch your GPU outpace Canvas2D by an order of magnitude.
         </p>
       </header>
 
-      <section id="status-panel">
+      <section id="status-panel" class="status-panel">
         <div class="status" id="status">Detecting WebGPU…</div>
         <div class="status small" id="avif-status">Probing AVIF…</div>
+        <div class="status small" id="device-status"></div>
       </section>
 
       <section class="controls">
-        <div class="row">
-          <label for="preset">Preset</label>
-          <select id="preset">
-            <option value="forum-post">Forum post</option>
-            <option value="ecommerce-thumbnail">Ecommerce thumbnail</option>
-            <option value="blog-hero">Blog hero</option>
-            <option value="avatar">Avatar</option>
-          </select>
-          <span id="preset-description" class="hint"></span>
-        </div>
+        <div class="preset-grid" id="preset-grid"></div>
 
         <div
           id="dropzone"
@@ -40,29 +37,43 @@
           aria-label="Drop images here or click to browse"
         >
           <input type="file" id="file-input" accept="image/*" multiple hidden />
-          <p class="dropzone-primary">Drop images here</p>
+          <p class="dropzone-primary">Drop images · 100+ supported</p>
           <p class="dropzone-secondary">
-            or <button id="browse" type="button" class="link">browse</button> · multi-select
-            supported
+            or <button id="browse" type="button" class="link">browse</button>
+            · everything stays on your device
           </p>
         </div>
 
-        <div class="row">
+        <div class="row knobs">
           <label for="concurrency">Concurrency</label>
           <input type="range" id="concurrency" min="1" max="8" step="1" value="4" />
           <output id="concurrency-value">4</output>
+          <label class="bench-toggle">
+            <input type="checkbox" id="bench-toggle" checked />
+            Benchmark vs Canvas2D
+          </label>
         </div>
 
         <div class="button-row">
-          <button id="run" disabled>Run pipeline</button>
-          <button id="cancel" disabled>Cancel</button>
-          <button id="download-zip" disabled>Download ZIP</button>
-          <button id="clear" disabled>Clear</button>
+          <button id="run" class="primary" disabled>Run pipeline</button>
+          <button id="cancel" class="ghost danger" disabled>Cancel</button>
+          <button id="download-zip" class="ghost" disabled>Download ZIP</button>
+          <button id="clear" class="ghost" disabled>Clear</button>
         </div>
+      </section>
 
-        <p class="hint">
-          Everything runs on your GPU, on your device. Nothing is uploaded to any server.
-        </p>
+      <section id="bench-panel" class="bench-panel" hidden>
+        <div class="bench-row">
+          <div class="bench-label">pixflow (WebGPU)</div>
+          <div class="bench-bar"><div id="bench-pixflow-fill"></div></div>
+          <div id="bench-pixflow-value" class="bench-value">—</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-label">Canvas2D (browser)</div>
+          <div class="bench-bar"><div id="bench-canvas-fill"></div></div>
+          <div id="bench-canvas-value" class="bench-value">—</div>
+        </div>
+        <div id="bench-summary" class="bench-summary"></div>
       </section>
 
       <section id="progress-panel" hidden>
@@ -75,6 +86,11 @@
       <section id="results" class="results"></section>
 
       <section id="log" aria-live="polite"></section>
+
+      <footer class="footer">
+        <span>MIT licensed · <a href="https://github.com/buraks/pixflow">github</a></span>
+        <span class="footer-right">no telemetry · no uploads · no tracking</span>
+      </footer>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

@@ -3,8 +3,10 @@ import { textureToBlob, type ReadbackOptions } from '../codec/readback.js';
 import { ErrorCode, PixflowError } from '../errors.js';
 import { AutoOrientFilter } from '../filters/auto-orient.js';
 import { BrightnessFilter, type BrightnessParams } from '../filters/brightness.js';
+import { ColorMatrixFilter, type ColorMatrixParams } from '../filters/color-matrix.js';
 import { ContrastFilter, type ContrastParams } from '../filters/contrast.js';
 import { CropFilter, type CropParams } from '../filters/crop.js';
+import { CurvesFilter, type CurvesParams, type CurvePoint } from '../filters/curves.js';
 import { FlipFilter, type FlipParams, type FlipAxis } from '../filters/flip.js';
 import { GaussianBlurFilter, type GaussianBlurParams } from '../filters/gaussian-blur.js';
 import { PadFilter, type PadParams } from '../filters/pad.js';
@@ -12,6 +14,7 @@ import { ResizeFilter, type ResizeParams } from '../filters/resize.js';
 import { Rotate90Filter, type Rotate90Params } from '../filters/rotate90.js';
 import { SaturationFilter, type SaturationParams } from '../filters/saturation.js';
 import { UnsharpMaskFilter, type UnsharpMaskParams } from '../filters/unsharp-mask.js';
+import { WhiteBalanceFilter, type WhiteBalanceParams } from '../filters/white-balance.js';
 import { imageToTexture } from '../resources/image-import.js';
 import { TexturePool } from '../resources/texture-pool.js';
 import { isExifOrientation, orientFilters, readExifOrientation } from '../utils/exif.js';
@@ -75,6 +78,7 @@ export class Pipeline {
     return this;
   }
 
+  /** Add or subtract a constant in [-1, 1] from every RGB channel. */
   brightness(amount: number): this;
   brightness(params: BrightnessParams): this;
   brightness(input: number | BrightnessParams): this {
@@ -83,6 +87,7 @@ export class Pipeline {
     return this;
   }
 
+  /** Scale RGB around 0.5 by `1 + amount`, with `amount` in [-1, 1]. */
   contrast(amount: number): this;
   contrast(params: ContrastParams): this;
   contrast(input: number | ContrastParams): this {
@@ -91,6 +96,7 @@ export class Pipeline {
     return this;
   }
 
+  /** Adjust saturation in HSL space; `amount` in [-1, 1]. -1 → grayscale. */
   saturation(amount: number): this;
   saturation(params: SaturationParams): this;
   saturation(input: number | SaturationParams): this {
@@ -99,16 +105,19 @@ export class Pipeline {
     return this;
   }
 
+  /** Lanczos-3 resize with Sharp.js-compatible fit modes. */
   resize(params: ResizeParams): this {
     this.filters.push(new ResizeFilter(params));
     return this;
   }
 
+  /** Crop a sub-rectangle. Coordinates are in input-pixel space. */
   crop(params: CropParams): this {
     this.filters.push(new CropFilter(params));
     return this;
   }
 
+  /** Rotate by 90 / 180 / 270 degrees clockwise (1, 2, or 3 turns). */
   rotate90(turns: 1 | 2 | 3): this;
   rotate90(params: Rotate90Params): this;
   rotate90(input: 1 | 2 | 3 | Rotate90Params): this {
@@ -117,6 +126,7 @@ export class Pipeline {
     return this;
   }
 
+  /** Mirror horizontally, vertically, or both. */
   flip(axis: FlipAxis): this;
   flip(params: FlipParams): this;
   flip(input: FlipAxis | FlipParams): this {
@@ -125,11 +135,13 @@ export class Pipeline {
     return this;
   }
 
+  /** Add solid-color padding around the image. */
   pad(params: PadParams): this {
     this.filters.push(new PadFilter(params));
     return this;
   }
 
+  /** Separable two-pass Gaussian blur. `radius` in pixels, [0, 64]. */
   gaussianBlur(radius: number): this;
   gaussianBlur(params: GaussianBlurParams): this;
   gaussianBlur(input: number | GaussianBlurParams): this {
@@ -138,8 +150,44 @@ export class Pipeline {
     return this;
   }
 
+  /** Unsharp mask: `original + (original − blur) × amount`. */
   unsharpMask(params: UnsharpMaskParams): this {
     this.filters.push(new UnsharpMaskFilter(params));
+    return this;
+  }
+
+  /**
+   * Apply a tone curve. Pass control points as `[input, output]` pairs in
+   * [0, 1]; the pipeline builds a 256-entry LUT by piecewise linear
+   * interpolation. Endpoints (0,0)/(1,1) are pinned automatically when
+   * missing.
+   */
+  curves(points: readonly CurvePoint[]): this;
+  curves(params: CurvesParams): this;
+  curves(input: readonly CurvePoint[] | CurvesParams): this {
+    const params: CurvesParams = Array.isArray(input) ? { points: input } : (input as CurvesParams);
+    this.filters.push(new CurvesFilter(params));
+    return this;
+  }
+
+  /** Shift color temperature (warm/cool) and tint (green/magenta), each in [-1, 1]. */
+  whiteBalance(params: WhiteBalanceParams): this {
+    this.filters.push(new WhiteBalanceFilter(params));
+    return this;
+  }
+
+  /**
+   * Apply an arbitrary 4×4 row-major matrix to (R, G, B, A) with optional
+   * additive bias. Useful for tone-mapping presets, channel mixing, sepia,
+   * grayscale, etc.
+   */
+  colorMatrix(params: ColorMatrixParams): this;
+  colorMatrix(matrix: readonly number[]): this;
+  colorMatrix(input: ColorMatrixParams | readonly number[]): this {
+    const params: ColorMatrixParams = Array.isArray(input)
+      ? { matrix: input }
+      : (input as ColorMatrixParams);
+    this.filters.push(new ColorMatrixFilter(params));
     return this;
   }
 

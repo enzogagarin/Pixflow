@@ -33,6 +33,23 @@ describe('Pipeline builder', () => {
     expect(p.length).toBe(8);
   });
 
+  it('chains the Week 5 color filters (curves, whiteBalance, colorMatrix)', () => {
+    const p = Pipeline.create()
+      .curves([
+        [0, 0],
+        [0.5, 0.6],
+        [1, 1],
+      ])
+      .whiteBalance({ temperature: 0.2, tint: -0.05 })
+      .colorMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    expect(p.length).toBe(3);
+    expect(p.describe().map((d) => d.name)).toEqual([
+      'curves',
+      'whiteBalance',
+      'colorMatrix',
+    ]);
+  });
+
   it('accepts either a number or a params object for shorthand filters', () => {
     const a = Pipeline.create().brightness(0.25);
     const b = Pipeline.create().brightness({ amount: 0.25 });

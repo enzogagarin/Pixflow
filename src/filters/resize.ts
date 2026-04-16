@@ -232,6 +232,13 @@ export function computeResizedDims(input: Dims, params: ResizeParams): Dims {
     return input;
   }
 
+  // Aspect math divides by input dims; a zero-sized source would yield NaN.
+  // We treat it as a 1x1 input so the pipeline can still produce a valid
+  // (clamped) output instead of silently corrupting downstream filters.
+  if (input.width <= 0 || input.height <= 0) {
+    return { width: Math.max(1, targetW ?? 1), height: Math.max(1, targetH ?? 1) };
+  }
+
   let outW: number;
   let outH: number;
 

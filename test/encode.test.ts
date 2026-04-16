@@ -61,6 +61,35 @@ describe('isAvifEncodingSupported', () => {
 });
 
 describe('encodeCanvas', () => {
+  it('uses PNG by default when no format is supplied', async () => {
+    const calls: string[] = [];
+    const canvas = {
+      convertToBlob: async (opts: ImageEncodeOptions) => {
+        calls.push(opts.type ?? '');
+        return new Blob([new Uint8Array([0])], { type: opts.type ?? '' });
+      },
+    } as unknown as OffscreenCanvas;
+
+    const res = await encodeCanvas(canvas);
+    expect(res.format).toBe('image/png');
+    expect(calls).toEqual(['image/png']);
+  });
+
+  it('encodes JPEG with quality', async () => {
+    const calls: { type: string; quality?: number }[] = [];
+    const canvas = {
+      convertToBlob: async (opts: ImageEncodeOptions) => {
+        const entry: { type: string; quality?: number } = { type: opts.type ?? '' };
+        if (opts.quality !== undefined) entry.quality = opts.quality;
+        calls.push(entry);
+        return new Blob([new Uint8Array([0])], { type: opts.type ?? '' });
+      },
+    } as unknown as OffscreenCanvas;
+    const res = await encodeCanvas(canvas, { format: 'image/jpeg', quality: 0.7 });
+    expect(res.format).toBe('image/jpeg');
+    expect(calls).toEqual([{ type: 'image/jpeg', quality: 0.7 }]);
+  });
+
   it('passes format + quality straight through for PNG/JPEG/WebP', async () => {
     const calls: { type: string; quality?: number }[] = [];
     const canvas = {
