@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pixflow · Week 1-2 prototype</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>pixflow</h1>
+        <p class="tagline">WebGPU image pipeline · Week 1-2 prototype</p>
+      </header>
+
+      <section id="status-panel">
+        <div class="status" id="status">Detecting WebGPU…</div>
+      </section>
+
+      <section class="controls">
+        <label class="file-upload">
+          <input type="file" id="file-input" accept="image/*" />
+          <span>Choose an image</span>
+        </label>
+
+        <div class="slider-row">
+          <label for="brightness">Brightness</label>
+          <input type="range" id="brightness" min="-100" max="100" step="1" value="20" />
+          <output id="brightness-value">+20</output>
+        </div>
+
+        <div class="slider-row">
+          <label for="contrast">Contrast</label>
+          <input type="range" id="contrast" min="-100" max="100" step="1" value="0" />
+          <output id="contrast-value">0</output>
+        </div>
+
+        <div class="button-row">
+          <button id="apply" disabled>Apply pipeline</button>
+          <button id="download" disabled>Download result</button>
+        </div>
+
+        <p class="hint">
+          The pipeline runs
+          <code>.brightness(amount/100).contrast(amount/100)</code> on your device's GPU. Nothing
+          uploads to a server.
+        </p>
+      </section>
+
+      <section class="preview">
+        <figure>
+          <figcaption>Input</figcaption>
+          <canvas id="input-canvas"></canvas>
+        </figure>
+        <figure>
+          <figcaption>Output</figcaption>
+          <canvas id="output-canvas"></canvas>
+        </figure>
+      </section>
+
+      <section id="log"></section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

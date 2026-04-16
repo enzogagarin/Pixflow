@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.DS_Store
+*.log
+.vite
+.cache
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.env
+.env.*
+!.env.example
