@@ -1,7 +1,6 @@
 import { ErrorCode, PixflowError } from '../errors.js';
 import type { EncodeOptions } from '../types.js';
-
-const DEFAULT_FORMAT: NonNullable<EncodeOptions['format']> = 'image/png';
+import { encodeCanvas, type EncodeRequest, type EncodeResult } from './encode.js';
 
 export interface ReadbackOptions extends EncodeOptions {
   readonly canvas?: HTMLCanvasElement | OffscreenCanvas;
@@ -11,7 +10,7 @@ export async function textureToBlob(
   device: GPUDevice,
   texture: GPUTexture,
   options: ReadbackOptions = {},
-): Promise<Blob> {
+): Promise<EncodeResult> {
   const width = texture.width;
   const height = texture.height;
 
@@ -43,7 +42,10 @@ export async function textureToBlob(
   );
   device.queue.submit([encoder.finish()]);
 
-  return canvasToBlob(canvas, options.format ?? DEFAULT_FORMAT, options.quality);
+  const request: { format?: NonNullable<EncodeOptions['format']>; quality?: number } = {};
+  if (options.format !== undefined) request.format = options.format;
+  if (options.quality !== undefined) request.quality = options.quality;
+  return encodeCanvas(canvas, request as EncodeRequest);
 }
 
 export function textureToCanvas(
@@ -103,41 +105,4 @@ function resizeCanvas(
 ): void {
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
-}
-
-async function canvasToBlob(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
-  type: string,
-  quality: number | undefined,
-): Promise<Blob> {
-  if ('convertToBlob' in canvas) {
-    try {
-      const opts: ImageEncodeOptions = { type };
-      if (quality !== undefined) opts.quality = quality;
-      return await canvas.convertToBlob(opts);
-    } catch (cause) {
-      throw new PixflowError(ErrorCode.ENCODING_FAILED, 'OffscreenCanvas.convertToBlob failed.', {
-        cause,
-      });
-    }
-  }
-
-  return new Promise<Blob>((resolve, reject) => {
-    (canvas as HTMLCanvasElement).toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(
-            new PixflowError(
-              ErrorCode.ENCODING_FAILED,
-              `HTMLCanvasElement.toBlob returned null for type=${type}.`,
-            ),
-          );
-          return;
-        }
-        resolve(blob);
-      },
-      type,
-      quality,
-    );
-  });
 }

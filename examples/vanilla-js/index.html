@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>pixflow · Week 3-5 demo</title>
+    <title>pixflow · Week 6-8 demo</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -11,137 +11,70 @@
       <header>
         <h1>pixflow</h1>
         <p class="tagline">
-          WebGPU image pipeline · Week 3-5: Lanczos resize, color &amp; geometric filters, pooled
-          memory
+          WebGPU image pipeline · Week 6-8: encoding, batch API, EXIF orient, real-world presets
         </p>
       </header>
 
       <section id="status-panel">
         <div class="status" id="status">Detecting WebGPU…</div>
+        <div class="status small" id="avif-status">Probing AVIF…</div>
       </section>
 
       <section class="controls">
-        <label class="file-upload">
-          <input type="file" id="file-input" accept="image/*" />
-          <span>Choose an image</span>
-        </label>
+        <div class="row">
+          <label for="preset">Preset</label>
+          <select id="preset">
+            <option value="forum-post">Forum post</option>
+            <option value="ecommerce-thumbnail">Ecommerce thumbnail</option>
+            <option value="blog-hero">Blog hero</option>
+            <option value="avatar">Avatar</option>
+          </select>
+          <span id="preset-description" class="hint"></span>
+        </div>
 
-        <fieldset class="group">
-          <legend>Resize (Lanczos-3)</legend>
-          <div class="slider-row">
-            <label for="resize-enabled">Enabled</label>
-            <input type="checkbox" id="resize-enabled" checked />
-            <output></output>
-          </div>
-          <div class="slider-row">
-            <label for="resize-width">Target width</label>
-            <input type="range" id="resize-width" min="64" max="2048" step="16" value="800" />
-            <output id="resize-width-value">800</output>
-          </div>
-          <div class="slider-row">
-            <label for="resize-fit">Fit mode</label>
-            <select id="resize-fit">
-              <option value="contain" selected>contain</option>
-              <option value="cover">cover</option>
-              <option value="fill">fill</option>
-              <option value="inside">inside</option>
-              <option value="outside">outside</option>
-            </select>
-            <output></output>
-          </div>
-        </fieldset>
+        <div
+          id="dropzone"
+          class="dropzone"
+          role="button"
+          tabindex="0"
+          aria-label="Drop images here or click to browse"
+        >
+          <input type="file" id="file-input" accept="image/*" multiple hidden />
+          <p class="dropzone-primary">Drop images here</p>
+          <p class="dropzone-secondary">
+            or <button id="browse" type="button" class="link">browse</button> · multi-select
+            supported
+          </p>
+        </div>
 
-        <fieldset class="group">
-          <legend>Color</legend>
-          <div class="slider-row">
-            <label for="brightness">Brightness</label>
-            <input type="range" id="brightness" min="-100" max="100" step="1" value="0" />
-            <output id="brightness-value">0</output>
-          </div>
-          <div class="slider-row">
-            <label for="contrast">Contrast</label>
-            <input type="range" id="contrast" min="-100" max="100" step="1" value="0" />
-            <output id="contrast-value">0</output>
-          </div>
-          <div class="slider-row">
-            <label for="saturation">Saturation</label>
-            <input type="range" id="saturation" min="-100" max="100" step="1" value="0" />
-            <output id="saturation-value">0</output>
-          </div>
-        </fieldset>
-
-        <fieldset class="group">
-          <legend>Quality</legend>
-          <div class="slider-row">
-            <label for="blur">Gaussian blur</label>
-            <input type="range" id="blur" min="0" max="20" step="1" value="0" />
-            <output id="blur-value">0</output>
-          </div>
-          <div class="slider-row">
-            <label for="sharpen-amount">Unsharp amount</label>
-            <input type="range" id="sharpen-amount" min="0" max="200" step="1" value="0" />
-            <output id="sharpen-amount-value">0%</output>
-          </div>
-          <div class="slider-row">
-            <label for="sharpen-radius">Unsharp radius</label>
-            <input type="range" id="sharpen-radius" min="1" max="10" step="1" value="1" />
-            <output id="sharpen-radius-value">1</output>
-          </div>
-        </fieldset>
-
-        <fieldset class="group">
-          <legend>Geometric</legend>
-          <div class="slider-row">
-            <label for="rotate">Rotate</label>
-            <select id="rotate">
-              <option value="0" selected>0°</option>
-              <option value="1">90° CW</option>
-              <option value="2">180°</option>
-              <option value="3">270° CW</option>
-            </select>
-            <output></output>
-          </div>
-          <div class="slider-row">
-            <label for="flip">Flip</label>
-            <select id="flip">
-              <option value="none" selected>none</option>
-              <option value="h">horizontal</option>
-              <option value="v">vertical</option>
-              <option value="both">both</option>
-            </select>
-            <output></output>
-          </div>
-          <div class="slider-row">
-            <label for="orient">EXIF orient</label>
-            <input type="checkbox" id="orient" checked />
-            <output>auto-detect</output>
-          </div>
-        </fieldset>
+        <div class="row">
+          <label for="concurrency">Concurrency</label>
+          <input type="range" id="concurrency" min="1" max="8" step="1" value="4" />
+          <output id="concurrency-value">4</output>
+        </div>
 
         <div class="button-row">
-          <button id="apply" disabled>Apply pipeline</button>
-          <button id="batch" disabled>Run 10x batch</button>
-          <button id="download" disabled>Download result</button>
+          <button id="run" disabled>Run pipeline</button>
+          <button id="cancel" disabled>Cancel</button>
+          <button id="download-zip" disabled>Download ZIP</button>
+          <button id="clear" disabled>Clear</button>
         </div>
 
         <p class="hint">
-          The pipeline runs entirely on your GPU. Texture pool + pipeline cache mean repeat runs
-          allocate zero new GPU memory. Nothing uploads to a server.
+          Everything runs on your GPU, on your device. Nothing is uploaded to any server.
         </p>
       </section>
 
-      <section class="preview">
-        <figure>
-          <figcaption>Input</figcaption>
-          <canvas id="input-canvas"></canvas>
-        </figure>
-        <figure>
-          <figcaption>Output</figcaption>
-          <canvas id="output-canvas"></canvas>
-        </figure>
+      <section id="progress-panel" hidden>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div id="progress-label" class="progress-label"></div>
       </section>
 
-      <section id="log"></section>
+      <section id="results" class="results"></section>
+
+      <section id="log" aria-live="polite"></section>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

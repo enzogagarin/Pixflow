@@ -1,5 +1,5 @@
 export { Pipeline } from './pipeline/pipeline.js';
-export type { PipelineOptions, RunOptions } from './pipeline/pipeline.js';
+export type { PipelineOptions, RunOptions, BatchOptions } from './pipeline/pipeline.js';
 export { PipelineCache } from './pipeline/pipeline-cache.js';
 
 export { PixflowError, ErrorCode } from './errors.js';
@@ -22,6 +22,14 @@ export { textureToBlob, textureToCanvas } from './codec/readback.js';
 export type { ReadbackOptions } from './codec/readback.js';
 
 export {
+  encodeCanvas,
+  isAvifEncodingSupported,
+  resetAvifSupportCache,
+  DEFAULT_ENCODE_FORMAT,
+} from './codec/encode.js';
+export type { EncodeResult, EncodeRequest } from './codec/encode.js';
+
+export {
   BrightnessFilter,
   ContrastFilter,
   SaturationFilter,
@@ -37,6 +45,7 @@ export {
   WORKGROUP_SIZE,
   alignTo,
 } from './filters/index.js';
+export { AutoOrientFilter } from './filters/auto-orient.js';
 export type {
   BrightnessParams,
   ContrastParams,
@@ -54,15 +63,15 @@ export type {
   ComputeFilterShape,
 } from './filters/index.js';
 
-export {
-  isExifOrientation,
-  orientFilters,
-  readExifOrientation,
-} from './utils/exif.js';
+export { isExifOrientation, orientFilters, readExifOrientation } from './utils/exif.js';
 export type { ExifOrientation } from './utils/exif.js';
+
+export { PRESETS, getPreset, listPresets } from './presets.js';
+export type { PresetName, PresetSpec } from './presets.js';
 
 export type {
   Dims,
+  EncodeFormat,
   EncodeOptions,
   ExecutionContext,
   Filter,

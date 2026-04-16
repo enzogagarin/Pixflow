@@ -1,6 +1,7 @@
 import { acquireDevice } from '../backends/webgpu/device.js';
 import { textureToBlob, type ReadbackOptions } from '../codec/readback.js';
 import { ErrorCode, PixflowError } from '../errors.js';
+import { AutoOrientFilter } from '../filters/auto-orient.js';
 import { BrightnessFilter, type BrightnessParams } from '../filters/brightness.js';
 import { ContrastFilter, type ContrastParams } from '../filters/contrast.js';
 import { CropFilter, type CropParams } from '../filters/crop.js';
@@ -33,7 +34,25 @@ export interface RunOptions extends EncodeOptions {
   readonly canvas?: HTMLCanvasElement | OffscreenCanvas;
 }
 
+export interface BatchOptions extends RunOptions {
+  /**
+   * Maximum number of images processed in parallel. WebGPU submissions are
+   * already serialized on the device queue, but overlapping decode + readback
+   * with GPU work is where parallelism wins. Default: 4.
+   */
+  readonly concurrency?: number;
+  /**
+   * Fired after each image finishes (successfully). `done` is monotonic.
+   * `result` and `index` let UI code route the output to the right slot
+   * without waiting for the whole batch to resolve.
+   */
+  readonly onProgress?: (done: number, total: number, result: PipelineResult, index: number) => void;
+  /** Abort the in-progress batch. Already-completed results are preserved. */
+  readonly signal?: AbortSignal;
+}
+
 const DEFAULT_FORMAT: GPUTextureFormat = 'rgba8unorm';
+const DEFAULT_CONCURRENCY = 4;
 
 export class Pipeline {
   private readonly filters: Filter[] = [];
@@ -41,6 +60,7 @@ export class Pipeline {
   private readonly pipelineCache = new PipelineCache();
   private texturePool: TexturePool | null = null;
   private ownedDevice: GPUDevice | null = null;
+  private encodeOptions: EncodeOptions | null = null;
 
   private constructor(options: PipelineOptions) {
     this.options = options;
@@ -123,7 +143,19 @@ export class Pipeline {
     return this;
   }
 
-  orient(orientation: number): this {
+  /**
+   * Apply EXIF orientation. Called with no args, the pipeline reads the EXIF
+   * orientation of the source image at `run()` time — different images in a
+   * batch can therefore carry different orientations. Called with a number
+   * (1-8), the orientation is fixed for every subsequent run.
+   */
+  orient(): this;
+  orient(orientation: number): this;
+  orient(orientation?: number): this {
+    if (orientation === undefined) {
+      this.filters.push(new AutoOrientFilter());
+      return this;
+    }
     if (!isExifOrientation(orientation)) {
       throw new PixflowError(
         ErrorCode.INVALID_INPUT,
@@ -137,6 +169,25 @@ export class Pipeline {
   async orientFromExif(source: Blob | ArrayBuffer): Promise<this> {
     const orientation = await readExifOrientation(source);
     return this.orient(orientation);
+  }
+
+  /**
+   * Configure the terminal encoding step. Returns `this` so it can sit at the
+   * end of a fluent chain, e.g. `Pipeline.create().resize(...).encode({ format
+   * : 'image/webp', quality: 0.85 })`. Per-call options passed to `run()` or
+   * `batch()` override these defaults.
+   */
+  encode(options: EncodeOptions = {}): this {
+    this.encodeOptions = { ...options };
+    return this;
+  }
+
+  /** Remove every filter and clear the stored encode options. Cached pipelines
+   * and pool buckets are kept so subsequent `run()` calls stay warm. */
+  reset(): this {
+    this.filters.length = 0;
+    this.encodeOptions = null;
+    return this;
   }
 
   get length(): number {
@@ -160,10 +211,12 @@ export class Pipeline {
     const textureFormat = this.options.textureFormat ?? DEFAULT_FORMAT;
     const pool = this.resolvePool(device);
 
+    const effectiveFilters = await expandAutoOrient(this.filters, source);
+
     const imported = await imageToTexture(device, source, { format: textureFormat });
     const inputDims: Dims = { width: imported.width, height: imported.height };
 
-    const stepDims = computeStepDims(inputDims, this.filters);
+    const stepDims = computeStepDims(inputDims, effectiveFilters);
 
     const encoder = device.createCommandEncoder({ label: 'pixflow.pipeline' });
     const ctx: ExecutionContext = {
@@ -175,8 +228,8 @@ export class Pipeline {
       textureFormat,
     };
 
-    for (let i = 0; i < this.filters.length; i++) {
-      const f = this.filters[i];
+    for (let i = 0; i < effectiveFilters.length; i++) {
+      const f = effectiveFilters[i];
       if (!f) continue;
       const inDims = stepDims[i];
       const outDims = stepDims[i + 1];
@@ -186,8 +239,8 @@ export class Pipeline {
 
     let src: GPUTexture = imported.texture;
     const acquired: GPUTexture[] = [];
-    for (let i = 0; i < this.filters.length; i++) {
-      const f = this.filters[i];
+    for (let i = 0; i < effectiveFilters.length; i++) {
+      const f = effectiveFilters[i];
       if (!f) continue;
       const outDims = stepDims[i + 1];
       if (!outDims) continue;
@@ -203,56 +256,90 @@ export class Pipeline {
 
     device.queue.submit([encoder.finish()]);
 
-    const blob = await textureToBlob(device, src, buildReadbackOptions(options));
+    const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
+    const encoded = await textureToBlob(device, src, readbackOptions);
 
     const finalDims = stepDims[stepDims.length - 1] ?? inputDims;
     imported.texture.destroy();
-    // Release the final texture (and any earlier intermediate that wasn't released yet).
     if (acquired.length > 0) {
       const last = acquired[acquired.length - 1];
       if (last) pool.release(last);
     }
 
-    const stats = pool.stats;
+    const poolStats = pool.stats;
     const durationMs = now() - start;
+    const requestedFormat = readbackOptions.format;
+    const stats = {
+      durationMs,
+      filterCount: effectiveFilters.length,
+      inputWidth: inputDims.width,
+      inputHeight: inputDims.height,
+      outputWidth: finalDims.width,
+      outputHeight: finalDims.height,
+      poolReuses: poolStats.reuses,
+      poolAllocations: poolStats.allocations,
+      cacheSize: this.pipelineCache.size,
+      format: encoded.format,
+      ...(encoded.fallback !== undefined && requestedFormat !== undefined
+        ? { requestedFormat }
+        : {}),
+    };
     return {
-      blob,
+      blob: encoded.blob,
       width: finalDims.width,
       height: finalDims.height,
-      stats: {
-        durationMs,
-        filterCount: this.filters.length,
-        inputWidth: inputDims.width,
-        inputHeight: inputDims.height,
-        outputWidth: finalDims.width,
-        outputHeight: finalDims.height,
-        poolReuses: stats.reuses,
-        poolAllocations: stats.allocations,
-        cacheSize: this.pipelineCache.size,
-      },
+      stats,
     };
   }
 
-  /** Sequentially process a list of sources. Concurrency support comes in Week 8. */
-  async batch(
-    sources: ImageSource[],
-    options: RunOptions & {
-      onProgress?: (done: number, total: number) => void;
-      signal?: AbortSignal;
-    } = {},
-  ): Promise<PipelineResult[]> {
-    const results: PipelineResult[] = [];
+  /**
+   * Process a list of sources with bounded concurrency. Progress fires after
+   * every completion and an AbortSignal cancels subsequent starts (in-flight
+   * runs finish). Results are returned in input order.
+   */
+  async batch(sources: ImageSource[], options: BatchOptions = {}): Promise<PipelineResult[]> {
     const total = sources.length;
-    for (let i = 0; i < total; i++) {
-      if (options.signal?.aborted) {
-        throw new PixflowError(ErrorCode.INVALID_INPUT, 'batch() aborted via signal.');
-      }
-      const src = sources[i];
-      if (!src) continue;
-      const result = await this.run(src, options);
-      results.push(result);
-      options.onProgress?.(i + 1, total);
+    const concurrency = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY, total));
+    if (total === 0) return [];
+
+    if (options.signal?.aborted) {
+      throw toAbortError(options.signal);
     }
+
+    const runOptions = pickRunOptions(options);
+    const results: PipelineResult[] = new Array(total);
+    let nextIndex = 0;
+    let completed = 0;
+    let aborted = false;
+
+    const onAbort = (): void => {
+      aborted = true;
+    };
+    options.signal?.addEventListener('abort', onAbort);
+
+    try {
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (true) {
+          if (aborted) return;
+          const i = nextIndex++;
+          if (i >= total) return;
+          const src = sources[i];
+          if (src === undefined) continue;
+          const result = await this.run(src, runOptions);
+          results[i] = result;
+          completed++;
+          options.onProgress?.(completed, total, result, i);
+        }
+      });
+      await Promise.all(workers);
+    } finally {
+      options.signal?.removeEventListener('abort', onAbort);
+    }
+
+    if (aborted) {
+      throw toAbortError(options.signal);
+    }
+
     return results;
   }
 
@@ -299,6 +386,39 @@ export function computeStepDims(input: Dims, filters: readonly Filter[]): Dims[]
   return dims;
 }
 
+async function expandAutoOrient(
+  filters: readonly Filter[],
+  source: ImageSource,
+): Promise<Filter[]> {
+  if (!filters.some((f) => f instanceof AutoOrientFilter)) {
+    return filters.slice();
+  }
+  const orientation = await orientationFromSource(source);
+  const expanded: Filter[] = [];
+  for (const f of filters) {
+    if (f instanceof AutoOrientFilter) {
+      for (const orientFilter of orientFilters(orientation)) {
+        expanded.push(orientFilter);
+      }
+    } else {
+      expanded.push(f);
+    }
+  }
+  return expanded;
+}
+
+async function orientationFromSource(source: ImageSource): Promise<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8> {
+  if (source instanceof Blob) {
+    return readExifOrientation(source);
+  }
+  if (source instanceof ArrayBuffer) {
+    return readExifOrientation(source);
+  }
+  // URL strings, ImageBitmap, HTMLImageElement don't carry readable EXIF here —
+  // assume the browser already oriented them.
+  return 1;
+}
+
 function now(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -306,14 +426,38 @@ function now(): number {
   return Date.now();
 }
 
-function buildReadbackOptions(options: RunOptions): ReadbackOptions {
+function buildReadbackOptions(
+  pipelineDefaults: EncodeOptions | null,
+  perCall: RunOptions,
+): ReadbackOptions {
   const out: {
     format?: ReadbackOptions['format'];
     quality?: ReadbackOptions['quality'];
     canvas?: ReadbackOptions['canvas'];
   } = {};
+  if (pipelineDefaults?.format !== undefined) out.format = pipelineDefaults.format;
+  if (pipelineDefaults?.quality !== undefined) out.quality = pipelineDefaults.quality;
+  if (perCall.format !== undefined) out.format = perCall.format;
+  if (perCall.quality !== undefined) out.quality = perCall.quality;
+  if (perCall.canvas !== undefined) out.canvas = perCall.canvas;
+  return out as ReadbackOptions;
+}
+
+function pickRunOptions(options: BatchOptions): RunOptions {
+  const out: { format?: RunOptions['format']; quality?: number; canvas?: RunOptions['canvas'] } =
+    {};
   if (options.format !== undefined) out.format = options.format;
   if (options.quality !== undefined) out.quality = options.quality;
   if (options.canvas !== undefined) out.canvas = options.canvas;
-  return out as ReadbackOptions;
+  return out as RunOptions;
+}
+
+function toAbortError(signal: AbortSignal | undefined): PixflowError {
+  const reason =
+    signal?.reason instanceof Error
+      ? signal.reason.message
+      : signal?.reason !== undefined
+        ? String(signal.reason)
+        : 'aborted';
+  return new PixflowError(ErrorCode.INVALID_INPUT, `batch() aborted: ${reason}`);
 }

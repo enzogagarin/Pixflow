@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeStepDims, Pipeline } from '../src/pipeline/pipeline.js';
 import { ResizeFilter } from '../src/filters/resize.js';
 import { Rotate90Filter } from '../src/filters/rotate90.js';
+import { AutoOrientFilter } from '../src/filters/auto-orient.js';
 import { PixflowError } from '../src/errors.js';
 
 describe('Pipeline builder', () => {
@@ -51,6 +52,49 @@ describe('Pipeline builder', () => {
   it('rejects orient() with invalid orientation', () => {
     const p = Pipeline.create();
     expect(() => p.orient(99)).toThrow(PixflowError);
+  });
+
+  it('orient() with no argument inserts an AutoOrientFilter marker', () => {
+    const p = Pipeline.create().resize({ width: 100 }).orient().brightness(0.1);
+    const names = p.describe().map((d) => d.name);
+    expect(names).toEqual(['resize', 'auto-orient', 'brightness']);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filters = (p as any).filters as unknown[];
+    expect(filters[1]).toBeInstanceOf(AutoOrientFilter);
+  });
+
+  it('encode() records pipeline-level defaults without adding a filter', () => {
+    const p = Pipeline.create().brightness(0.1).encode({ format: 'image/webp', quality: 0.85 });
+    expect(p.length).toBe(1);
+    expect(p.describe().map((d) => d.name)).toEqual(['brightness']);
+  });
+
+  it('reset() clears filters and encode options but keeps the instance reusable', () => {
+    const p = Pipeline.create()
+      .brightness(0.1)
+      .resize({ width: 100 })
+      .encode({ format: 'image/webp' });
+    expect(p.length).toBe(2);
+    p.reset();
+    expect(p.length).toBe(0);
+    p.contrast(0.2);
+    expect(p.length).toBe(1);
+    expect(p.describe()[0]?.name).toBe('contrast');
+  });
+});
+
+describe('AutoOrientFilter', () => {
+  it('has a stable name, hash, and cpu stage', () => {
+    const f = new AutoOrientFilter();
+    expect(f.name).toBe('auto-orient');
+    expect(f.stage).toBe('cpu');
+    expect(f.hash()).toBe('auto-orient');
+  });
+
+  it('throws if prepare() or execute() is called directly', () => {
+    const f = new AutoOrientFilter();
+    expect(() => f.prepare()).toThrow(PixflowError);
+    expect(() => f.execute()).toThrow(PixflowError);
   });
 });
 

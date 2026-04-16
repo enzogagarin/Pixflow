@@ -1,47 +1,46 @@
 import {
+  isAvifEncodingSupported,
   isWebGPUSupported,
   Pipeline,
   PixflowError,
-  readExifOrientation,
-  type ResizeFit,
+  PRESETS,
+  type PipelineResult,
+  type PresetName,
 } from 'pixflow';
+import { buildZip } from './zip.js';
 
 const statusEl = qs<HTMLDivElement>('#status');
+const avifStatusEl = qs<HTMLDivElement>('#avif-status');
+const presetSelect = qs<HTMLSelectElement>('#preset');
+const presetDesc = qs<HTMLSpanElement>('#preset-description');
+const dropzone = qs<HTMLDivElement>('#dropzone');
 const fileInput = qs<HTMLInputElement>('#file-input');
-
-const resizeEnabled = qs<HTMLInputElement>('#resize-enabled');
-const resizeWidth = qs<HTMLInputElement>('#resize-width');
-const resizeWidthOut = qs<HTMLOutputElement>('#resize-width-value');
-const resizeFit = qs<HTMLSelectElement>('#resize-fit');
-
-const brightnessInput = qs<HTMLInputElement>('#brightness');
-const brightnessOut = qs<HTMLOutputElement>('#brightness-value');
-const contrastInput = qs<HTMLInputElement>('#contrast');
-const contrastOut = qs<HTMLOutputElement>('#contrast-value');
-const saturationInput = qs<HTMLInputElement>('#saturation');
-const saturationOut = qs<HTMLOutputElement>('#saturation-value');
-
-const blurInput = qs<HTMLInputElement>('#blur');
-const blurOut = qs<HTMLOutputElement>('#blur-value');
-const sharpenAmount = qs<HTMLInputElement>('#sharpen-amount');
-const sharpenAmountOut = qs<HTMLOutputElement>('#sharpen-amount-value');
-const sharpenRadius = qs<HTMLInputElement>('#sharpen-radius');
-const sharpenRadiusOut = qs<HTMLOutputElement>('#sharpen-radius-value');
-
-const rotateInput = qs<HTMLSelectElement>('#rotate');
-const flipInput = qs<HTMLSelectElement>('#flip');
-const orientInput = qs<HTMLInputElement>('#orient');
-
-const applyBtn = qs<HTMLButtonElement>('#apply');
-const batchBtn = qs<HTMLButtonElement>('#batch');
-const downloadBtn = qs<HTMLButtonElement>('#download');
-const inputCanvas = qs<HTMLCanvasElement>('#input-canvas');
-const outputCanvas = qs<HTMLCanvasElement>('#output-canvas');
+const browseBtn = qs<HTMLButtonElement>('#browse');
+const concurrencyInput = qs<HTMLInputElement>('#concurrency');
+const concurrencyOut = qs<HTMLOutputElement>('#concurrency-value');
+const runBtn = qs<HTMLButtonElement>('#run');
+const cancelBtn = qs<HTMLButtonElement>('#cancel');
+const zipBtn = qs<HTMLButtonElement>('#download-zip');
+const clearBtn = qs<HTMLButtonElement>('#clear');
+const progressPanel = qs<HTMLElement>('#progress-panel');
+const progressFill = qs<HTMLDivElement>('#progress-fill');
+const progressLabel = qs<HTMLDivElement>('#progress-label');
+const resultsEl = qs<HTMLElement>('#results');
 const logEl = qs<HTMLElement>('#log');
 
-let currentFile: File | null = null;
-let lastBlob: Blob | null = null;
-let lastFilename = 'pixflow-output.png';
+interface Slot {
+  readonly file: File;
+  status: 'pending' | 'running' | 'done' | 'error';
+  result?: PipelineResult;
+  error?: string;
+  card?: HTMLDivElement;
+  outputCanvas?: HTMLCanvasElement;
+  outputUrl?: string;
+}
+
+let slots: Slot[] = [];
+let abort: AbortController | null = null;
+
 const sharedPipeline = Pipeline.create();
 
 (async () => {
@@ -50,197 +49,299 @@ const sharedPipeline = Pipeline.create();
     setStatus('WebGPU is not available in this browser. Try Chrome 121+ or Safari 26+.', 'error');
     return;
   }
-  setStatus('WebGPU ready. Upload an image to start.', 'ok');
+  setStatus('WebGPU ready. Drop images to start.', 'ok');
+  const avif = await isAvifEncodingSupported();
+  avifStatusEl.textContent = avif
+    ? 'AVIF encoding: supported'
+    : 'AVIF encoding: not supported (WebP fallback)';
+  avifStatusEl.classList.toggle('ok', avif);
 })();
 
-resizeWidth.addEventListener('input', () => {
-  resizeWidthOut.value = resizeWidth.value;
-});
-brightnessInput.addEventListener('input', () => {
-  brightnessOut.value = formatSigned(+brightnessInput.value);
-});
-contrastInput.addEventListener('input', () => {
-  contrastOut.value = formatSigned(+contrastInput.value);
-});
-saturationInput.addEventListener('input', () => {
-  saturationOut.value = formatSigned(+saturationInput.value);
-});
-blurInput.addEventListener('input', () => {
-  blurOut.value = blurInput.value;
-});
-sharpenAmount.addEventListener('input', () => {
-  sharpenAmountOut.value = `${sharpenAmount.value}%`;
-});
-sharpenRadius.addEventListener('input', () => {
-  sharpenRadiusOut.value = sharpenRadius.value;
+setPresetDescription();
+presetSelect.addEventListener('change', setPresetDescription);
+
+concurrencyInput.addEventListener('input', () => {
+  concurrencyOut.value = concurrencyInput.value;
 });
 
-fileInput.addEventListener('change', async () => {
-  const file = fileInput.files?.[0] ?? null;
-  currentFile = file;
-  lastBlob = null;
-  downloadBtn.disabled = true;
-  if (!file) {
-    applyBtn.disabled = true;
-    batchBtn.disabled = true;
-    return;
-  }
-  lastFilename = makeOutputFilename(file.name);
-  await drawOriginalPreview(file);
-  applyBtn.disabled = false;
-  batchBtn.disabled = false;
-  log(`Loaded ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+browseBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  fileInput.click();
 });
-
-applyBtn.addEventListener('click', async () => {
-  if (!currentFile) return;
-  applyBtn.disabled = true;
-  batchBtn.disabled = true;
-  downloadBtn.disabled = true;
-
-  try {
-    const pipeline = await buildPipeline(currentFile);
-    const result = await pipeline.run(currentFile, { format: 'image/png' });
-    lastBlob = result.blob;
-    await drawBlobToCanvas(result.blob, outputCanvas);
-    log(
-      `Done in ${result.stats.durationMs.toFixed(1)} ms · ` +
-        `${result.width.toString()}x${result.height.toString()} · ` +
-        `${(result.blob.size / 1024).toFixed(1)} KB · ` +
-        `pool alloc ${result.stats.poolAllocations.toString()}, reuse ${result.stats.poolReuses.toString()} · ` +
-        `cache size ${result.stats.cacheSize.toString()}`,
-    );
-    downloadBtn.disabled = false;
-  } catch (err) {
-    if (err instanceof PixflowError) {
-      log(`[${err.code}] ${err.message}`);
-      setStatus(`${err.code}: ${err.message}`, 'error');
-    } else {
-      log(`Unexpected error: ${String(err)}`);
-    }
-  } finally {
-    applyBtn.disabled = false;
-    batchBtn.disabled = false;
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fileInput.click();
   }
 });
+fileInput.addEventListener('change', () => {
+  const files = Array.from(fileInput.files ?? []);
+  if (files.length > 0) addFiles(files);
+  fileInput.value = '';
+});
 
-batchBtn.addEventListener('click', async () => {
-  if (!currentFile) return;
-  applyBtn.disabled = true;
-  batchBtn.disabled = true;
-  const sources = Array.from({ length: 10 }, () => currentFile!);
-  const pipeline = await buildPipeline(currentFile);
+dropzone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropzone.classList.add('drag');
+});
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
+  if (files.length > 0) addFiles(files);
+});
+
+runBtn.addEventListener('click', runBatch);
+cancelBtn.addEventListener('click', () => abort?.abort());
+clearBtn.addEventListener('click', clearAll);
+zipBtn.addEventListener('click', downloadZip);
+
+function setPresetDescription(): void {
+  const preset = PRESETS[presetSelect.value as PresetName];
+  presetDesc.textContent = preset?.description ?? '';
+}
+
+function addFiles(files: File[]): void {
+  for (const file of files) {
+    const slot: Slot = { file, status: 'pending' };
+    slots.push(slot);
+    renderCard(slot);
+    void drawInput(slot);
+  }
+  refreshButtons();
+  log(`Loaded ${String(files.length)} file(s). Total queue: ${String(slots.length)}.`);
+}
+
+function refreshButtons(): void {
+  const pending = slots.some((s) => s.status === 'pending');
+  const done = slots.some((s) => s.status === 'done');
+  runBtn.disabled = !pending || abort !== null;
+  cancelBtn.disabled = abort === null;
+  zipBtn.disabled = !done;
+  clearBtn.disabled = slots.length === 0 || abort !== null;
+}
+
+function clearAll(): void {
+  for (const s of slots) {
+    s.card?.remove();
+    if (s.outputUrl) URL.revokeObjectURL(s.outputUrl);
+  }
+  slots = [];
+  progressPanel.hidden = true;
+  refreshButtons();
+}
+
+async function runBatch(): Promise<void> {
+  const toRun = slots.filter((s) => s.status === 'pending');
+  if (toRun.length === 0) return;
+
+  const preset = PRESETS[presetSelect.value as PresetName];
+  if (!preset) return;
+
+  sharedPipeline.reset();
+  preset.apply(sharedPipeline);
+
+  abort = new AbortController();
+  refreshButtons();
+  progressPanel.hidden = false;
+  updateProgress(0, toRun.length);
+
+  const concurrency = Math.max(1, Math.min(8, parseInt(concurrencyInput.value, 10) || 4));
   const start = performance.now();
+
+  // Map slot -> index-in-toRun so batch results can be routed back.
+  const sources = toRun.map((s) => s.file);
+  for (const s of toRun) s.status = 'running';
+  slots.forEach(renderCard);
+
   try {
-    const results = await pipeline.batch(sources, {
-      format: 'image/png',
-      onProgress: (done, total) => {
-        log(`batch progress ${done.toString()}/${total.toString()}`);
+    await sharedPipeline.batch(sources, {
+      concurrency,
+      signal: abort.signal,
+      onProgress: (done, total, result, index) => {
+        updateProgress(done, total);
+        const slot = toRun[index];
+        if (!slot) return;
+        slot.status = 'done';
+        slot.result = result;
+        void finalizeSlot(slot);
       },
     });
     const elapsed = performance.now() - start;
-    const last = results[results.length - 1];
+    const perImage = (elapsed / toRun.length).toFixed(1);
     log(
-      `Batch x${results.length.toString()} in ${elapsed.toFixed(1)} ms · ` +
-        `avg ${(elapsed / results.length).toFixed(1)} ms/image · ` +
-        `final pool alloc ${last?.stats.poolAllocations.toString() ?? '0'}, reuse ${last?.stats.poolReuses.toString() ?? '0'}`,
+      `Batch: ${String(toRun.length)} image(s) in ${elapsed.toFixed(1)} ms` +
+        ` (avg ${perImage} ms/image, concurrency=${String(concurrency)})`,
     );
   } catch (err) {
-    log(`Batch error: ${String(err)}`);
+    const msg = err instanceof PixflowError ? `[${err.code}] ${err.message}` : String(err);
+    for (const s of toRun) {
+      if (s.status === 'running') {
+        s.status = 'error';
+        s.error = msg;
+        renderCard(s);
+      }
+    }
+    log(`Batch error: ${msg}`);
   } finally {
-    applyBtn.disabled = false;
-    batchBtn.disabled = false;
+    abort = null;
+    refreshButtons();
   }
-});
+}
 
-downloadBtn.addEventListener('click', () => {
-  if (!lastBlob) return;
-  const url = URL.createObjectURL(lastBlob);
+async function finalizeSlot(slot: Slot): Promise<void> {
+  renderCard(slot);
+  if (!slot.result || !slot.outputCanvas) return;
+  const bitmap = await createImageBitmap(slot.result.blob);
+  slot.outputCanvas.width = bitmap.width;
+  slot.outputCanvas.height = bitmap.height;
+  const ctx = slot.outputCanvas.getContext('2d');
+  ctx?.drawImage(bitmap, 0, 0);
+  bitmap.close();
+}
+
+async function drawInput(slot: Slot): Promise<void> {
+  const canvas = slot.card?.querySelector<HTMLCanvasElement>('.input-canvas');
+  if (!canvas) return;
+  try {
+    const bitmap = await createImageBitmap(slot.file);
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  } catch (err) {
+    log(`Failed to decode ${slot.file.name}: ${String(err)}`);
+  }
+}
+
+function renderCard(slot: Slot): void {
+  if (!slot.card) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-compare">
+        <figure>
+          <canvas class="input-canvas"></canvas>
+          <figcaption>input</figcaption>
+        </figure>
+        <figure>
+          <canvas class="output-canvas"></canvas>
+          <figcaption>output</figcaption>
+        </figure>
+      </div>
+      <div class="card-body">
+        <div class="card-title"></div>
+        <div class="card-meta"></div>
+        <div class="card-actions">
+          <button class="download" type="button" disabled>Download</button>
+          <button class="remove" type="button">Remove</button>
+        </div>
+      </div>
+    `;
+    slot.card = card;
+    slot.outputCanvas = card.querySelector<HTMLCanvasElement>('.output-canvas') ?? undefined;
+    card.querySelector('.download')?.addEventListener('click', () => downloadSlot(slot));
+    card.querySelector('.remove')?.addEventListener('click', () => removeSlot(slot));
+    resultsEl.appendChild(card);
+  }
+  const card = slot.card;
+  const title = card.querySelector<HTMLDivElement>('.card-title');
+  const meta = card.querySelector<HTMLDivElement>('.card-meta');
+  const download = card.querySelector<HTMLButtonElement>('.download');
+  if (title) title.textContent = slot.file.name;
+  card.classList.toggle('error', slot.status === 'error');
+  if (meta) meta.textContent = metaText(slot);
+  if (download) download.disabled = slot.status !== 'done';
+}
+
+function metaText(slot: Slot): string {
+  if (slot.status === 'pending') return `queued · ${formatBytes(slot.file.size)}`;
+  if (slot.status === 'running') return `processing…`;
+  if (slot.status === 'error') return slot.error ?? 'error';
+  const r = slot.result;
+  if (!r) return '';
+  const ratio = r.blob.size / slot.file.size;
+  const fallback = r.stats.requestedFormat
+    ? ` (fallback from ${prettyFormat(r.stats.requestedFormat)})`
+    : '';
+  return [
+    `${String(r.stats.inputWidth)}×${String(r.stats.inputHeight)} → ${String(r.width)}×${String(r.height)}`,
+    `${prettyFormat(r.stats.format)}${fallback} · ${formatBytes(r.blob.size)} (${(ratio * 100).toFixed(0)}% of original)`,
+    `${r.stats.durationMs.toFixed(1)} ms · pool alloc ${String(r.stats.poolAllocations)}, reuse ${String(r.stats.poolReuses)}`,
+  ].join('\n');
+}
+
+function prettyFormat(format: string): string {
+  return format.replace('image/', '').toUpperCase();
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function removeSlot(slot: Slot): void {
+  const idx = slots.indexOf(slot);
+  if (idx >= 0) slots.splice(idx, 1);
+  if (slot.outputUrl) URL.revokeObjectURL(slot.outputUrl);
+  slot.card?.remove();
+  refreshButtons();
+}
+
+function downloadSlot(slot: Slot): void {
+  if (!slot.result) return;
+  const url = URL.createObjectURL(slot.result.blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = lastFilename;
+  a.download = outputName(slot);
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-});
-
-async function buildPipeline(file: File): Promise<Pipeline> {
-  // Reuse a shared Pipeline instance so the pipeline cache and texture pool
-  // amortize compile + allocation cost across runs. We rebuild the filter list
-  // each time to reflect current control values.
-  resetFilters(sharedPipeline);
-
-  if (orientInput.checked && file.type === 'image/jpeg') {
-    const orientation = await readExifOrientation(file);
-    if (orientation !== 1) sharedPipeline.orient(orientation);
-  }
-
-  if (resizeEnabled.checked) {
-    sharedPipeline.resize({
-      width: +resizeWidth.value,
-      fit: resizeFit.value as ResizeFit,
-    });
-  }
-
-  const b = +brightnessInput.value / 100;
-  const c = +contrastInput.value / 100;
-  const s = +saturationInput.value / 100;
-  if (b !== 0) sharedPipeline.brightness(b);
-  if (c !== 0) sharedPipeline.contrast(c);
-  if (s !== 0) sharedPipeline.saturation(s);
-
-  const blur = +blurInput.value;
-  if (blur > 0) sharedPipeline.gaussianBlur(blur);
-
-  const sa = +sharpenAmount.value / 100;
-  if (sa > 0) {
-    sharedPipeline.unsharpMask({ amount: sa, radius: +sharpenRadius.value });
-  }
-
-  const turns = +rotateInput.value;
-  if (turns === 1 || turns === 2 || turns === 3) {
-    sharedPipeline.rotate90(turns);
-  }
-  const flip = flipInput.value;
-  if (flip === 'h' || flip === 'v' || flip === 'both') {
-    sharedPipeline.flip(flip);
-  }
-
-  if (sharedPipeline.length === 0) {
-    sharedPipeline.brightness(0);
-  }
-  return sharedPipeline;
 }
 
-function resetFilters(p: Pipeline): void {
-  // Pipeline doesn't expose a filter-clear method yet. Repopulating is fine
-  // because compiled pipelines and pool buckets are owned by the Pipeline
-  // instance and survive across rebuilds.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (p as any).filters.length = 0;
+async function downloadZip(): Promise<void> {
+  const done = slots.filter((s) => s.status === 'done' && s.result);
+  if (done.length === 0) return;
+  const files = done.map((s) => ({ name: outputName(s), blob: s.result!.blob }));
+  const zip = await buildZip(files);
+  const url = URL.createObjectURL(zip);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pixflow-${presetSelect.value}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  log(`ZIP: ${String(done.length)} file(s), ${formatBytes(zip.size)}`);
 }
 
-async function drawOriginalPreview(file: File): Promise<void> {
-  const bitmap = await createImageBitmap(file);
-  inputCanvas.width = bitmap.width;
-  inputCanvas.height = bitmap.height;
-  const ctx = inputCanvas.getContext('2d');
-  if (!ctx) return;
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  outputCanvas.width = 0;
-  outputCanvas.height = 0;
+function outputName(slot: Slot): string {
+  const base = slot.file.name.replace(/\.[^.]+$/, '');
+  const ext = extForFormat(slot.result?.stats.format);
+  return `${base}.pixflow.${ext}`;
 }
 
-async function drawBlobToCanvas(blob: Blob, canvas: HTMLCanvasElement): Promise<void> {
-  const bitmap = await createImageBitmap(blob);
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
+function extForFormat(format: string | undefined): string {
+  switch (format) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/webp':
+      return 'webp';
+    case 'image/avif':
+      return 'avif';
+    default:
+      return 'png';
+  }
+}
+
+function updateProgress(done: number, total: number): void {
+  const pct = total === 0 ? 0 : (done / total) * 100;
+  progressFill.style.width = `${pct.toFixed(1)}%`;
+  progressLabel.textContent = `${String(done)} / ${String(total)}`;
 }
 
 function setStatus(message: string, tone: 'ok' | 'error' | 'neutral' = 'neutral'): void {
@@ -253,17 +354,6 @@ function setStatus(message: string, tone: 'ok' | 'error' | 'neutral' = 'neutral'
 function log(message: string): void {
   const timestamp = new Date().toLocaleTimeString();
   logEl.textContent = `[${timestamp}] ${message}\n${logEl.textContent ?? ''}`;
-}
-
-function formatSigned(value: number): string {
-  if (value > 0) return `+${value.toString()}`;
-  return value.toString();
-}
-
-function makeOutputFilename(originalName: string): string {
-  const dot = originalName.lastIndexOf('.');
-  const base = dot > 0 ? originalName.slice(0, dot) : originalName;
-  return `${base}.pixflow.png`;
 }
 
 function qs<T extends Element>(selector: string): T {

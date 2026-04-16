@@ -60,6 +60,10 @@ export interface PipelineStats {
   readonly poolReuses: number;
   readonly poolAllocations: number;
   readonly cacheSize: number;
+  /** Format the blob was actually encoded as (may differ from requested when AVIF falls back). */
+  readonly format: EncodeFormat;
+  /** Format the caller asked for when we had to fall back, otherwise undefined. */
+  readonly requestedFormat?: EncodeFormat;
 }
 
 export interface PipelineResult {
@@ -71,7 +75,9 @@ export interface PipelineResult {
 
 export type ImageSource = File | Blob | string | ImageBitmap | HTMLImageElement;
 
+export type EncodeFormat = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/avif';
+
 export interface EncodeOptions {
-  readonly format?: 'image/png' | 'image/jpeg' | 'image/webp';
+  readonly format?: EncodeFormat;
   readonly quality?: number;
 }
