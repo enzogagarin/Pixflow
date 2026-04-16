@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pixflow — GPU Image Processing in Your Browser</title>
+<meta name="description" content="WebGPU-powered batch image processing library. Resize, filter, encode — entirely client-side. Zero uploads. Zero servers.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='4' width='4' height='4' fill='%23fff'/><rect x='6' y='8' width='4' height='4' fill='%23fff'/><rect x='10' y='4' width='4' height='4' fill='%23fff'/></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+    --white: #f0f0f0;
+    --gray: #888;
+    --dark: #1a1a1a;
+    --black: #000;
+    --pixel: 4px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: var(--sans);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* Pixel art grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: var(--pixel) var(--pixel);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Pixel border helper */
+  .pixel-border {
+    border: 2px solid var(--white);
+    image-rendering: pixelated;
+  }
+
+  /* Nav */
+  nav {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 100;
+    padding: 16px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: var(--white);
+  }
+
+  .logo-icon {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 2px;
+  }
+
+  .logo-icon span {
+    background: var(--white);
+  }
+
+  .logo-icon span:nth-child(5) { background: transparent; border: 1px solid var(--white); }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--gray);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--white); }
+
+  .nav-github {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 16px;
+    border: 1px solid var(--white);
+    color: var(--white);
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .nav-github:hover { background: var(--white); color: var(--black); }
+
+  /* Sections */
+  section { position: relative; z-index: 1; }
+
+  /* Hero */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 120px 40px 80px;
+    text-align: center;
+  }
+
+  .hero-badge {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--gray);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-badge::before, .hero-badge::after {
+    content: '';
+    width: 24px;
+    height: 1px;
+    background: var(--gray);
+  }
+
+  .hero h1 {
+    font-family: var(--mono);
+    font-size: clamp(40px, 7vw, 80px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -2px;
+    margin-bottom: 24px;
+    max-width: 800px;
+  }
+
+  .hero h1 .dim { color: var(--gray); font-weight: 400; }
+
+  .hero-sub {
+    font-size: 18px;
+    color: var(--gray);
+    max-width: 540px;
+    margin-bottom: 48px;
+    line-height: 1.7;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 14px 28px;
+    text-decoration: none;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--white);
+    color: var(--black);
+    border: 2px solid var(--white);
+    font-weight: 600;
+  }
+
+  .btn-primary:hover {
+    background: transparent;
+    color: var(--white);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--white);
+    border: 1px solid rgba(255,255,255,0.3);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--white);
+  }
+
+  /* Animated pixel grid in hero */
+  .hero-grid {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px;
+    height: 400px;
+    opacity: 0.04;
+    pointer-events: none;
+    display: grid;
+    grid-template-columns: repeat(60, 1fr);
+    grid-template-rows: repeat(40, 1fr);
+  }
+
+  .hero-grid span {
+    background: var(--white);
+    animation: pixelPulse 4s infinite;
+    animation-delay: calc(var(--i) * 0.05s);
+  }
+
+  @keyframes pixelPulse {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; }
+  }
+
+  /* Code block */
+  .code-section {
+    padding: 80px 40px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .code-showcase {
+    max-width: 720px;
+    width: 100%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.02);
+    overflow: hidden;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--gray);
+  }
+
+  .code-dot {
+    width: 8px;
+    height: 8px;
+    border: 1px solid var(--gray);
+  }
+
+  .code-body {
+    padding: 24px;
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 2;
+    overflow-x: auto;
+  }
+
+  .code-body .kw { color: #fff; font-weight: 600; }
+  .code-body .fn { color: #ccc; }
+  .code-body .str { color: var(--gray); }
+  .code-body .cmt { color: #555; }
+  .code-body .num { color: var(--white); }
+
+  /* Why section */
+  .why {
+    padding: 120px 40px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gray);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 48px;
+  }
+
+  .why-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: rgba(255,255,255,0.1);
+  }
+
+  .why-card {
+    background: var(--black);
+    padding: 48px 40px;
+  }
+
+  .why-card-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 2px;
+  }
+
+  .why-card-icon span {
+    background: var(--white);
+  }
+
+  .why-card h3 {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .why-card p {
+    color: var(--gray);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  /* Pipeline visual */
+  .pipeline-section {
+    padding: 120px 40px;
+    text-align: center;
+  }
+
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 48px auto;
+    max-width: 900px;
+    flex-wrap: wrap;
+  }
+
+  .pipeline-step {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px 20px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.03);
+    white-space: nowrap;
+  }
+
+  .pipeline-arrow {
+    font-family: var(--mono);
+    color: #444;
+    font-size: 18px;
+    padding: 0 8px;
+  }
+
+  /* Stats */
+  .stats {
+    padding: 100px 40px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .stat-item {
+    padding: 32px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    color: var(--gray);
+    font-family: var(--mono);
+  }
+
+  /* Filters */
+  .filters-section {
+    padding: 120px 40px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .filter-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 32px;
+  }
+
+  .filter-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--gray);
+    transition: all 0.2s;
+  }
+
+  .filter-tag:hover {
+    color: var(--white);
+    border-color: var(--white);
+  }
+
+  .filter-tag.active {
+    color: var(--black);
+    background: var(--white);
+    border-color: var(--white);
+  }
+
+  /* Comparison */
+  .comparison {
+    padding: 120px 40px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 32px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .comparison-table th {
+    text-align: left;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    color: var(--gray);
+    font-weight: 400;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .comparison-table td {
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .comparison-table .highlight { color: var(--white); font-weight: 600; }
+  .comparison-table .dim { color: var(--gray); }
+
+  /* CTA */
+  .cta {
+    padding: 160px 40px;
+    text-align: center;
+  }
+
+  .cta h2 {
+    font-family: var(--mono);
+    font-size: clamp(28px, 4vw, 48px);
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  .cta p {
+    color: var(--gray);
+    margin-bottom: 40px;
+    font-size: 16px;
+  }
+
+  .cta-links {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 48px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--gray);
+  }
+
+  .cta-links a {
+    color: var(--gray);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .cta-links a:hover { color: var(--white); }
+
+  /* Footer */
+  footer {
+    padding: 32px 40px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #444;
+  }
+
+  /* Pixel art decorations */
+  .pixel-corner {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 0;
+    opacity: 0.15;
+  }
+
+  .pixel-corner span { background: var(--white); }
+
+  /* Scroll animations */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s, transform 0.6s;
+  }
+
+  .fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    nav { padding: 12px 20px; }
+    .nav-links { display: none; }
+    .hero { padding: 100px 20px 60px; }
+    .hero h1 { letter-spacing: -1px; }
+    .why-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .pipeline-flow { gap: 4px; }
+    .pipeline-arrow { display: none; }
+    footer { flex-direction: column; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a href="#" class="logo">
+    <div class="logo-icon">
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+    </div>
+    pixflow
+  </a>
+  <ul class="nav-links">
+    <li><a href="#why">Why</a></li>
+    <li><a href="#pipeline">How</a></li>
+    <li><a href="#benchmarks">Benchmarks</a></li>
+    <li><a href="#filters">Filters</a></li>
+    <li><a href="https://github.com/enzogagarin/Pixflow" target="_blank" class="nav-github">GitHub &rarr;</a></li>
+  </ul>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-grid" id="heroGrid"></div>
+  <div class="hero-badge">WebGPU Native</div>
+  <h1>process images<br><span class="dim">on the GPU.</span><br>in the browser.</h1>
+  <p class="hero-sub">Resize, filter, and encode hundreds of images in seconds. Zero server uploads. Zero privacy leaks. Pure client-side GPU compute.</p>
+  <div class="hero-cta">
+    <a href="https://github.com/enzogagarin/Pixflow" target="_blank" class="btn btn-primary">Get Started</a>
+    <a href="#code" class="btn btn-secondary">See it in action</a>
+  </div>
+</section>
+
+<!-- Code -->
+<section class="code-section fade-in" id="code">
+  <div class="code-showcase">
+    <div class="code-header">
+      <div class="code-dot"></div>
+      <div class="code-dot"></div>
+      <div class="code-dot"></div>
+      <span style="margin-left: 12px;">pipeline.ts</span>
+    </div>
+    <div class="code-body">
+      <span class="kw">import</span> { <span class="fn">Pipeline</span> } <span class="kw">from</span> <span class="str">'pixflow'</span><br><br>
+      <span class="cmt">// 100 images. GPU-processed. Under 3 seconds.</span><br><br>
+      <span class="kw">const</span> <span class="fn">pipe</span> = <span class="fn">Pipeline</span>.<span class="fn">create</span>()<br>
+      &nbsp;&nbsp;.<span class="fn">orient</span>()<br>
+      &nbsp;&nbsp;.<span class="fn">resize</span>({ <span class="fn">width</span>: <span class="num">800</span>, <span class="fn">fit</span>: <span class="str">'contain'</span> })<br>
+      &nbsp;&nbsp;.<span class="fn">brightness</span>(<span class="num">0.05</span>)<br>
+      &nbsp;&nbsp;.<span class="fn">unsharpMask</span>({ <span class="fn">amount</span>: <span class="num">0.3</span>, <span class="fn">radius</span>: <span class="num">1.0</span> })<br>
+      &nbsp;&nbsp;.<span class="fn">encode</span>({ <span class="fn">format</span>: <span class="str">'webp'</span>, <span class="fn">quality</span>: <span class="num">0.85</span> })<br><br>
+      <span class="kw">const</span> <span class="fn">results</span> = <span class="kw">await</span> <span class="fn">pipe</span>.<span class="fn">batch</span>(<span class="fn">files</span>, {<br>
+      &nbsp;&nbsp;<span class="fn">concurrency</span>: <span class="num">4</span>,<br>
+      &nbsp;&nbsp;<span class="fn">onProgress</span>: (<span class="fn">done</span>, <span class="fn">total</span>) <span class="kw">=></span> <span class="fn">updateUI</span>(<span class="fn">done</span>, <span class="fn">total</span>)<br>
+      })<br><br>
+      <span class="cmt">// results[i] → { blob, width, height, stats }</span>
+    </div>
+  </div>
+</section>
+
+<!-- Why -->
+<section class="why fade-in" id="why">
+  <div class="section-label">Why pixflow</div>
+  <div class="why-grid">
+    <div class="why-card">
+      <div class="why-card-icon">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h3>Privacy is architecture</h3>
+      <p>Photos never leave the user's device. No server uploads, no logs, no cloud storage. GDPR compliance built in, not bolted on.</p>
+    </div>
+    <div class="why-card">
+      <div class="why-card-icon">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h3>GPU-native speed</h3>
+      <p>WebGPU compute shaders process pixels in parallel. 100 images × 2K resized in under 3 seconds on an M1 Mac. Canvas2D can't compete.</p>
+    </div>
+    <div class="why-card">
+      <div class="why-card-icon">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h3>Declarative pipelines</h3>
+      <p>Chain filters with a fluent builder API. No imperative canvas calls, no manual texture management. Read the code, understand the pipeline.</p>
+    </div>
+    <div class="why-card">
+      <div class="why-card-icon">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h3>Zero cost at scale</h3>
+      <p>Your users' GPUs do the work, not your servers. Bandwidth drops 90%. Server-side image processing becomes optional. Your AWS bill shrinks.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Pipeline -->
+<section class="pipeline-section fade-in" id="pipeline">
+  <div class="section-label">How it works</div>
+  <div class="pipeline-flow">
+    <div class="pipeline-step">File/Blob</div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">ImageBitmap</div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">GPUTexture</div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step" style="border-color: rgba(255,255,255,0.5);">Filter N</div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">Canvas</div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">WebP Blob</div>
+  </div>
+  <p style="color: var(--gray); max-width: 520px; margin: 32px auto 0; font-size: 14px; line-height: 1.8; text-align: center;">
+    Each filter runs as a <strong style="color: var(--white);">WGSL compute shader</strong> on the GPU. Intermediate textures use a ping-pong pattern — N filters only need 2 textures. Pipeline cache eliminates redundant shader compilation across batch items.
+  </p>
+</section>
+
+<!-- Stats -->
+<section class="stats fade-in" id="benchmarks">
+  <div class="stats-grid">
+    <div class="stat-item">
+      <div class="stat-value">&lt;3s</div>
+      <div class="stat-label">100 images × 2K→800</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">&lt;100ms</div>
+      <div class="stat-label">Single image pipeline</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">70KB</div>
+      <div class="stat-label">Bundle (gzipped)</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">0</div>
+      <div class="stat-label">Server roundtrips</div>
+    </div>
+  </div>
+</section>
+
+<!-- Filters -->
+<section class="filters-section fade-in" id="filters">
+  <div class="section-label">MVP Filter Set</div>
+  <h2 style="font-family: var(--mono); font-size: 28px; font-weight: 700; margin-bottom: 8px;">15 filters. All GPU.</h2>
+  <p style="color: var(--gray); font-size: 14px;">Every filter is a WGSL compute shader. 8×8 workgroups. Linear sRGB color space. No CPU fallbacks in the hot path.</p>
+  <div class="filter-list">
+    <div class="filter-tag active">resize (Lanczos-3)</div>
+    <div class="filter-tag active">crop</div>
+    <div class="filter-tag active">rotate90</div>
+    <div class="filter-tag active">flip</div>
+    <div class="filter-tag active">pad</div>
+    <div class="filter-tag active">brightness</div>
+    <div class="filter-tag active">contrast</div>
+    <div class="filter-tag active">saturation</div>
+    <div class="filter-tag active">gaussianBlur</div>
+    <div class="filter-tag active">unsharpMask</div>
+    <div class="filter-tag active">autoOrient (EXIF)</div>
+    <div class="filter-tag">curves <span style="color:#555">v0.2</span></div>
+    <div class="filter-tag">whiteBalance <span style="color:#555">v0.2</span></div>
+    <div class="filter-tag">denoise <span style="color:#555">v0.2</span></div>
+    <div class="filter-tag">histogram <span style="color:#555">v0.2</span></div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section class="comparison fade-in">
+  <div class="section-label">vs. alternatives</div>
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>pixflow</th>
+        <th>Canvas2D</th>
+        <th>Sharp.js</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Runtime</td>
+        <td class="highlight">Browser GPU</td>
+        <td class="dim">Browser CPU</td>
+        <td class="dim">Node.js server</td>
+      </tr>
+      <tr>
+        <td>Privacy</td>
+        <td class="highlight">Client-side</td>
+        <td class="dim">Client-side</td>
+        <td class="dim">Server upload</td>
+      </tr>
+      <tr>
+        <td>100 imgs 2K→800</td>
+        <td class="highlight">&lt;3s</td>
+        <td class="dim">~45s</td>
+        <td class="dim">~8s (server)</td>
+      </tr>
+      <tr>
+        <td>Server cost</td>
+        <td class="highlight">$0</td>
+        <td class="highlight">$0</td>
+        <td class="dim">$$ per GB</td>
+      </tr>
+      <tr>
+        <td>WGSL shaders</td>
+        <td class="highlight">Yes</td>
+        <td class="dim">No</td>
+        <td class="dim">No</td>
+      </tr>
+      <tr>
+        <td>Batch API</td>
+        <td class="highlight">Built-in</td>
+        <td class="dim">Manual</td>
+        <td class="dim">Manual</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CTA -->
+<section class="cta fade-in">
+  <h2>Stop uploading images<br>to resize them.</h2>
+  <p>Your users' GPUs are idle. Their photos are on your server. Fix both.</p>
+  <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+    <a href="https://github.com/enzogagarin/Pixflow" target="_blank" class="btn btn-primary">View on GitHub</a>
+    <a href="https://www.npmjs.com/package/pixflow" target="_blank" class="btn btn-secondary">npm install pixflow</a>
+  </div>
+  <div class="cta-links">
+    <a href="https://github.com/enzogagarin/Pixflow/blob/main/DESIGN.md">Design Doc</a>
+    <span>&bull;</span>
+    <a href="https://github.com/enzogagarin/Pixflow/blob/main/README.md">API Reference</a>
+    <span>&bull;</span>
+    <a href="https://github.com/enzogagarin/Pixflow/blob/main/LICENSE">MIT License</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <span>pixflow — WebGPU image processing</span>
+  <span>built by <a href="https://twitter.com/qwertyquel" style="color: var(--gray); text-decoration: none;">@qwertyquel</a></span>
+</footer>
+
+<script>
+// Hero pixel grid
+const grid = document.getElementById('heroGrid');
+for (let i = 0; i < 2400; i++) {
+  const span = document.createElement('span');
+  span.style.setProperty('--i', Math.floor(Math.random() * 80));
+  if (Math.random() > 0.3) span.style.opacity = '0';
+  grid.appendChild(span);
+}
+
+// Scroll fade-in
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+// Pixel art icons (randomized patterns for each card)
+document.querySelectorAll('.why-card-icon').forEach((icon, idx) => {
+  const patterns = [
+    [1,1,0,1, 1,0,0,1, 0,0,1,0, 1,1,0,1], // privacy - lock
+    [0,1,1,0, 1,1,1,1, 1,1,1,1, 0,1,1,0], // speed - diamond
+    [1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1], // declarative - flow
+    [1,1,1,1, 1,0,0,1, 1,0,0,1, 1,1,1,1], // cost - box
+  ];
+  const pattern = patterns[idx] || patterns[0];
+  icon.innerHTML = '';
+  pattern.forEach(v => {
+    const s = document.createElement('span');
+    if (!v) s.style.opacity = '0';
+    icon.appendChild(s);
+  });
+});
+</script>
+
+</body>
+</html>
