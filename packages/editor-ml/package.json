@@ -1,0 +1,15 @@
+{
+  "name": "@pixflow/editor-ml",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pixflow editor ML modules (face detection; skeleton — no implementation yet)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'editor-ml skeleton has no code yet; skipping typecheck' && exit 0",
+    "test": "echo 'editor-ml skeleton has no tests yet; skipping' && exit 0",
+    "build": "echo 'editor-ml skeleton has no code yet; skipping build' && exit 0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

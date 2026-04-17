@@ -199,15 +199,36 @@ A WebGL2 fallback is on the roadmap (`DESIGN.md`, week 11) for the long tail.
 
 ## Develop locally
 
+Pixflow is a pnpm monorepo. The library lives in `packages/pixflow/`; the
+demo, landing page, and future editor app each have their own package.
+
 ```bash
 git clone https://github.com/enzogagarin/pixflow
 cd pixflow
 pnpm install
-pnpm dev          # demo at http://localhost:5173
-pnpm --dir landing dev -- --port 5174   # landing page at http://localhost:5174
-pnpm test         # headless unit tests
-pnpm typecheck    # strict TS
-pnpm build        # library bundle via tsup → dist/
+
+# demo (vanilla-js): http://localhost:5173
+pnpm dev:demo
+
+# landing page: http://localhost:5173 (run separately, not alongside the demo)
+pnpm dev:landing
+
+# repo-wide checks
+pnpm -r test                       # all package tests
+pnpm -r typecheck                  # all package typechecks
+pnpm --filter pixflow build        # library bundle → packages/pixflow/dist/
+```
+
+Layout:
+
+```
+packages/
+  pixflow/          ← the library (published as "pixflow" on npm)
+  landing/          ← marketing page
+  editor/           ← upcoming editor app (skeleton)
+  editor-ml/        ← upcoming ML modules (skeleton)
+examples/
+  vanilla-js/       ← interactive demo
 ```
 
 The demo in `examples/vanilla-js/` is the best place to see what the library can do —
