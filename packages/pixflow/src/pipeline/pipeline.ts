@@ -73,6 +73,11 @@ export class Pipeline {
   private readonly pipelineCache: PipelineCache;
   private texturePool: TexturePool | null = null;
   private ownedDevice: GPUDevice | null = null;
+  // Single-flight latch for concurrent acquireDevice() calls (see
+  // resolveDevice). Null until the first unowned resolveDevice() invocation;
+  // thereafter holds the acquisition promise so every concurrent caller
+  // awaits the same result and observes the same GPUDevice.
+  private deviceAcquisition: Promise<GPUDevice> | null = null;
   private tracker: TrackedDevice | null = null;
   private encodeOptions: EncodeOptions | null = null;
   private disposed = false;
@@ -571,6 +576,7 @@ export class Pipeline {
       this.ownedDevice.destroy();
       this.ownedDevice = null;
     }
+    this.deviceAcquisition = null;
     this.tracker = null;
   }
 
@@ -586,10 +592,21 @@ export class Pipeline {
       this.tracker?.assertAlive();
       return this.ownedDevice;
     }
-    const acquired = await acquireDevice();
-    this.ownedDevice = acquired.device;
-    this.tracker = trackDevice(acquired.device);
-    return this.ownedDevice;
+    // Cache the in-flight acquisition so concurrent batch workers share the
+    // same device. Without this latch, each worker's `await acquireDevice()`
+    // would resolve independently and overwrite `this.ownedDevice`, producing
+    // multiple GPUDevice instances within one pipeline. Textures created on
+    // one device cannot be used with another, which surfaces as "Texture is
+    // associated with [Device] and cannot be used with [Device]" validation
+    // errors and empty/corrupt output for subsequent batch items.
+    if (!this.deviceAcquisition) {
+      this.deviceAcquisition = acquireDevice().then((acquired) => {
+        this.ownedDevice = acquired.device;
+        this.tracker = trackDevice(acquired.device);
+        return acquired.device;
+      });
+    }
+    return this.deviceAcquisition;
   }
 
   private resolvePool(device: GPUDevice): TexturePool {
