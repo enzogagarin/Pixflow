@@ -1,5 +1,6 @@
 export const ErrorCode = {
   WEBGPU_UNAVAILABLE: 'WEBGPU_UNAVAILABLE',
+  VIDEO_UNAVAILABLE: 'VIDEO_UNAVAILABLE',
   ADAPTER_REQUEST_FAILED: 'ADAPTER_REQUEST_FAILED',
   DEVICE_REQUEST_FAILED: 'DEVICE_REQUEST_FAILED',
   DEVICE_LOST: 'DEVICE_LOST',
@@ -23,6 +24,8 @@ export interface PixflowErrorOptions {
 const DEFAULT_SUGGESTIONS: Partial<Record<ErrorCodeValue, string>> = {
   WEBGPU_UNAVAILABLE:
     'WebGPU requires Chrome 113+, Edge 113+, Safari 18+, or Firefox 141+. Check chrome://gpu for device support.',
+  VIDEO_UNAVAILABLE:
+    'Video processing needs HTMLVideoElement decode + createImageBitmap support in this browser.',
   ADAPTER_REQUEST_FAILED:
     'No GPU adapter is available. On Linux, try launching the browser with --enable-unsafe-webgpu, or fall back to a CPU path.',
   DEVICE_REQUEST_FAILED:

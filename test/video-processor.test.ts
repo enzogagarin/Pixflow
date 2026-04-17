@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VideoProcessor } from '../src/video/video-processor.js';
 import * as videoModule from '../src/video/index.js';
 import * as rootModule from '../src/index.js';
-import { PixflowError } from '../src/errors.js';
+import { ErrorCode, PixflowError } from '../src/errors.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -28,10 +28,18 @@ describe('VideoProcessor', () => {
 
   it('detects support when WebCodecs globals are mocked', () => {
     expect(VideoProcessor.isSupported()).toBe(false);
-    vi.stubGlobal('VideoDecoder', class FakeVideoDecoder {});
     vi.stubGlobal('createImageBitmap', vi.fn());
     vi.stubGlobal('document', { createElement: vi.fn() });
     expect(VideoProcessor.isSupported()).toBe(true);
+  });
+
+  it('surfaces VIDEO_UNAVAILABLE when video APIs are missing', async () => {
+    const processor = new VideoProcessor();
+    const video = new File(['fake'], 'clip.mp4', { type: 'video/mp4' });
+
+    await expect(processor.extractFrames(video)).rejects.toMatchObject({
+      code: ErrorCode.VIDEO_UNAVAILABLE,
+    });
   });
 });
 

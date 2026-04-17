@@ -24,6 +24,7 @@ describe('PixflowError', () => {
   it('exports all documented error codes', () => {
     const expected = [
       'WEBGPU_UNAVAILABLE',
+      'VIDEO_UNAVAILABLE',
       'ADAPTER_REQUEST_FAILED',
       'DEVICE_REQUEST_FAILED',
       'DEVICE_LOST',

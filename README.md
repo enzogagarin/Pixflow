@@ -158,12 +158,12 @@ const png  = base.encode({ format: 'image/png' });
 - `.encode({ format, quality? })` — `image/png` (default), `image/jpeg`, `image/webp`, `image/avif`
   (AVIF auto-falls back to WebP when unsupported and reports it on `result.fallback`)
 - `.run(source, opts?)` — execute on a single `File`/`Blob`/URL/`ImageBitmap`
-- `.batch(sources, { concurrency, signal, onProgress, onItemError })` — parallel batch with cancellation
+- `.batch(sources, { concurrency, signal, onProgress })` — parallel batch with cancellation
 
 ### Errors
 
 All failures throw `PixflowError` with a stable `code` from `ErrorCode`
-(`UNSUPPORTED_BROWSER`, `DEVICE_LOST`, `INVALID_PARAMS`, `DECODE_FAILED`, `ABORTED`, …).
+(`WEBGPU_UNAVAILABLE`, `VIDEO_UNAVAILABLE`, `DEVICE_LOST`, `INVALID_INPUT`, `ENCODING_FAILED`, …).
 Match on `code`, not on message.
 
 ### Resource hints
@@ -200,11 +200,12 @@ A WebGL2 fallback is on the roadmap (`DESIGN.md`, week 11) for the long tail.
 ## Develop locally
 
 ```bash
-git clone https://github.com/buraks/pixflow
+git clone https://github.com/enzogagarin/pixflow
 cd pixflow
 pnpm install
 pnpm dev          # demo at http://localhost:5173
-pnpm test         # 120 unit tests, headless
+pnpm --dir landing dev -- --port 5174   # landing page at http://localhost:5174
+pnpm test         # headless unit tests
 pnpm typecheck    # strict TS
 pnpm build        # library bundle via tsup → dist/
 ```

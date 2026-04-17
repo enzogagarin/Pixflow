@@ -44,7 +44,7 @@ export class VideoProcessor {
   static isSupported(): boolean {
     return (
       typeof document !== 'undefined' &&
-      typeof VideoDecoder !== 'undefined' &&
+      typeof document.createElement === 'function' &&
       typeof createImageBitmap === 'function'
     );
   }
@@ -117,8 +117,8 @@ export class VideoProcessor {
   private assertSupported(): void {
     if (VideoProcessor.isSupported()) return;
     throw new PixflowError(
-      ErrorCode.WEBGPU_UNAVAILABLE,
-      'Video processing requires browser WebCodecs support (VideoDecoder + createImageBitmap).',
+      ErrorCode.VIDEO_UNAVAILABLE,
+      'Video processing requires HTMLVideoElement decode and createImageBitmap support.',
     );
   }
 }

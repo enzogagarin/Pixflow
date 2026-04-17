@@ -51,8 +51,9 @@ interface Slot {
   result?: PipelineResult;
   error?: string;
   card?: HTMLDivElement;
-  inputCanvas?: HTMLCanvasElement;
-  outputCanvas?: HTMLCanvasElement;
+  inputImage?: HTMLImageElement;
+  outputImage?: HTMLImageElement;
+  inputUrl?: string;
   outputUrl?: string;
 }
 
@@ -188,10 +189,13 @@ function bindUi(): void {
 
 function addFiles(files: File[]): void {
   for (const file of files) {
-    const slot: Slot = { file, status: 'pending' };
+    const slot: Slot = {
+      file,
+      status: 'pending',
+      inputUrl: URL.createObjectURL(file),
+    };
     slots.push(slot);
     renderCard(slot);
-    void drawInput(slot);
   }
   refreshButtons();
   log(`Loaded ${String(files.length)} file(s) · queue total ${String(slots.length)}`);
@@ -352,16 +356,18 @@ async function runCanvasBenchmark(
   benchPanel.hidden = false;
   benchPixflowValue.textContent = `${pixflowMs.toFixed(0)} ms`;
   benchCanvasValue.textContent = 'measuring…';
-  benchSummary.textContent = `Running the same workload through HTMLCanvasElement.drawImage + toBlob…`;
+  benchSummary.textContent = `Running a Canvas2D baseline that matches the selected preset as closely as possible…`;
   benchPixflowFill.style.width = '0%';
   benchCanvasFill.style.width = '0%';
 
-  const target = canvasTargetForPreset(preset.name);
   const start = performance.now();
   let totalBytes = 0;
   for (const slot of toRun) {
     try {
-      const out = await canvasPipeline(slot.file, target);
+      if (!slot.result) continue;
+      const out = await canvasPipeline(slot, preset, {
+        watermark: watermarkToggle.checked,
+      });
       totalBytes += out.size;
     } catch (err) {
       log(`Canvas2D fallback failed on ${slot.file.name}: ${String(err)}`);
@@ -380,125 +386,248 @@ async function runCanvasBenchmark(
   const ratio =
     speedup >= 1 ? speedup.toFixed(1) : (1 / speedup).toFixed(1);
   benchSummary.innerHTML =
-    `pixflow is <strong>${ratio}× ${verb}</strong> than Canvas2D for this workload ` +
+    `pixflow is <strong>${ratio}× ${verb}</strong> than the matched Canvas2D baseline ` +
     `(${String(toRun.length)} image(s), ${(totalBytes / 1024 / 1024).toFixed(1)} MB Canvas2D output).`;
 }
 
-interface CanvasTarget {
+interface CanvasRecipe {
   readonly width: number;
   readonly height: number;
   readonly fit: 'cover' | 'contain';
-  readonly type: string;
+  readonly format: string;
   readonly quality: number;
+  readonly saturation?: number;
+  readonly unsharp?: {
+    readonly amount: number;
+    readonly threshold: number;
+  };
 }
 
-function canvasTargetForPreset(name: PresetName): CanvasTarget {
+interface CanvasBenchmarkOptions {
+  readonly watermark: boolean;
+}
+
+function canvasRecipeForSlot(slot: Slot, name: PresetName): CanvasRecipe {
+  const result = slot.result;
+  if (!result) {
+    throw new Error(`Missing pixflow result for ${slot.file.name}`);
+  }
   switch (name) {
     case 'avatar':
-      return { width: 256, height: 256, fit: 'cover', type: 'image/webp', quality: 0.8 };
+      return {
+        width: result.width,
+        height: result.height,
+        fit: 'cover',
+        format: result.stats.format,
+        quality: 0.8,
+        unsharp: { amount: 0.4, threshold: 0 },
+      };
     case 'ecommerce-thumbnail':
-      return { width: 600, height: 600, fit: 'cover', type: 'image/webp', quality: 0.7 };
+      return {
+        width: result.width,
+        height: result.height,
+        fit: 'cover',
+        format: result.stats.format,
+        quality: 0.7,
+        unsharp: { amount: 0.5, threshold: 0 },
+      };
     case 'blog-hero':
-      return { width: 1600, height: 900, fit: 'cover', type: 'image/webp', quality: 0.85 };
+      return {
+        width: result.width,
+        height: result.height,
+        fit: 'cover',
+        format: result.stats.format,
+        quality: 0.85,
+        saturation: 0.1,
+        unsharp: { amount: 0.25, threshold: 0 },
+      };
     case 'forum-post':
     default:
-      return { width: 1200, height: 1200, fit: 'contain', type: 'image/webp', quality: 0.82 };
+      return {
+        width: result.width,
+        height: result.height,
+        fit: 'contain',
+        format: result.stats.format,
+        quality: 0.82,
+        unsharp: { amount: 0.3, threshold: 0 },
+      };
   }
 }
 
-async function canvasPipeline(file: File, target: CanvasTarget): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
+async function canvasPipeline(
+  slot: Slot,
+  preset: PresetSpec,
+  options: CanvasBenchmarkOptions,
+): Promise<Blob> {
+  const recipe = canvasRecipeForSlot(slot, preset.name);
+  const bitmap = await createImageBitmap(slot.file);
   const { width: srcW, height: srcH } = bitmap;
-  const dims = scaledDims(srcW, srcH, target);
   const canvas = document.createElement('canvas');
-  canvas.width = dims.width;
-  canvas.height = dims.height;
+  canvas.width = recipe.width;
+  canvas.height = recipe.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('no 2d context');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  if (target.fit === 'cover') {
-    const ratio = Math.max(dims.width / srcW, dims.height / srcH);
+  ctx.clearRect(0, 0, recipe.width, recipe.height);
+  if (recipe.fit === 'cover') {
+    const ratio = Math.max(recipe.width / srcW, recipe.height / srcH);
     const drawW = srcW * ratio;
     const drawH = srcH * ratio;
     ctx.drawImage(
       bitmap,
-      (dims.width - drawW) / 2,
-      (dims.height - drawH) / 2,
+      (recipe.width - drawW) / 2,
+      (recipe.height - drawH) / 2,
       drawW,
       drawH,
     );
   } else {
-    const ratio = Math.min(dims.width / srcW, dims.height / srcH);
-    ctx.drawImage(bitmap, 0, 0, srcW * ratio, srcH * ratio);
+    const ratio = Math.min(recipe.width / srcW, recipe.height / srcH);
+    const drawW = srcW * ratio;
+    const drawH = srcH * ratio;
+    ctx.drawImage(
+      bitmap,
+      (recipe.width - drawW) / 2,
+      (recipe.height - drawH) / 2,
+      drawW,
+      drawH,
+    );
   }
   bitmap.close();
+
+  if (recipe.saturation !== undefined || recipe.unsharp) {
+    const image = ctx.getImageData(0, 0, recipe.width, recipe.height);
+    if (recipe.saturation !== undefined) {
+      applySaturation(image.data, recipe.saturation);
+    }
+    if (recipe.unsharp) {
+      applyUnsharpMask(image.data, recipe.width, recipe.height, recipe.unsharp);
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  if (options.watermark) {
+    await drawCanvasWatermark(ctx, recipe.width, recipe.height);
+  }
+
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
-      target.type,
-      target.quality,
+      recipe.format,
+      recipe.quality,
     );
   });
 }
 
-function scaledDims(
-  srcW: number,
-  srcH: number,
-  target: CanvasTarget,
-): { width: number; height: number } {
-  if (target.fit === 'cover') {
-    return { width: target.width, height: target.height };
+function applySaturation(data: Uint8ClampedArray, amount: number): void {
+  const multiplier = 1 + amount;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i] ?? 0;
+    const g = data[i + 1] ?? 0;
+    const b = data[i + 2] ?? 0;
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    data[i] = clampByte(gray + (r - gray) * multiplier);
+    data[i + 1] = clampByte(gray + (g - gray) * multiplier);
+    data[i + 2] = clampByte(gray + (b - gray) * multiplier);
   }
-  const ratio = Math.min(target.width / srcW, target.height / srcH);
-  return {
-    width: Math.max(1, Math.round(srcW * ratio)),
-    height: Math.max(1, Math.round(srcH * ratio)),
-  };
+}
+
+function applyUnsharpMask(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  params: { amount: number; threshold: number },
+): void {
+  const original = new Uint8ClampedArray(data);
+  const blurred = blurRgba(original, width, height);
+  const threshold = params.threshold * 255;
+  for (let i = 0; i < data.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      const orig = original[i + c] ?? 0;
+      const blur = blurred[i + c] ?? 0;
+      const diff = orig - blur;
+      if (Math.abs(diff) < threshold) {
+        data[i + c] = orig;
+        continue;
+      }
+      data[i + c] = clampByte(orig + diff * params.amount);
+    }
+    data[i + 3] = original[i + 3] ?? 255;
+  }
+}
+
+function blurRgba(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(data.length);
+  const kernel = [
+    [1, 2, 1],
+    [2, 4, 2],
+    [1, 2, 1],
+  ];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      let weightSum = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const sx = Math.min(width - 1, Math.max(0, x + kx));
+          const sy = Math.min(height - 1, Math.max(0, y + ky));
+          const weight = kernel[ky + 1]?.[kx + 1] ?? 0;
+          const idx = (sy * width + sx) * 4;
+          r += (data[idx] ?? 0) * weight;
+          g += (data[idx + 1] ?? 0) * weight;
+          b += (data[idx + 2] ?? 0) * weight;
+          a += (data[idx + 3] ?? 0) * weight;
+          weightSum += weight;
+        }
+      }
+      const outIdx = (y * width + x) * 4;
+      out[outIdx] = clampByte(r / weightSum);
+      out[outIdx + 1] = clampByte(g / weightSum);
+      out[outIdx + 2] = clampByte(b / weightSum);
+      out[outIdx + 3] = clampByte(a / weightSum);
+    }
+  }
+  return out;
+}
+
+async function drawCanvasWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): Promise<void> {
+  const watermark = await getWatermarkBitmap();
+  const scale = 0.15;
+  const margin = 16;
+  const drawWidth = Math.max(1, Math.round(width * scale));
+  const drawHeight = Math.max(1, Math.round((drawWidth * watermark.height) / watermark.width));
+  const x = Math.max(0, width - drawWidth - margin);
+  const y = Math.max(0, height - drawHeight - margin);
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.drawImage(watermark, x, y, drawWidth, drawHeight);
+  ctx.restore();
+}
+
+function clampByte(value: number): number {
+  return Math.min(255, Math.max(0, Math.round(value)));
 }
 
 async function finalizeSlot(slot: Slot): Promise<void> {
   renderCard(slot);
-  if (!slot.result || !slot.outputCanvas) return;
-  const bitmap = await createImageBitmap(slot.result.blob);
-  // Match the visible card aspect ratio (4:3) so the slider lines up with
-  // the input canvas. We render the output bitmap centered with `object-fit
-  // : contain` semantics by drawing to a 4:3 backing.
-  const cardW = 480;
-  const cardH = 360;
-  slot.outputCanvas.width = cardW;
-  slot.outputCanvas.height = cardH;
-  const ctx = slot.outputCanvas.getContext('2d');
-  if (!ctx) return;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, cardW, cardH);
-  const r = Math.min(cardW / bitmap.width, cardH / bitmap.height);
-  const dw = bitmap.width * r;
-  const dh = bitmap.height * r;
-  ctx.drawImage(bitmap, (cardW - dw) / 2, (cardH - dh) / 2, dw, dh);
-  bitmap.close();
-}
-
-async function drawInput(slot: Slot): Promise<void> {
-  const canvas = slot.card?.querySelector<HTMLCanvasElement>('.input-canvas');
-  if (!canvas) return;
+  if (!slot.result || !slot.outputImage) return;
   try {
-    const bitmap = await createImageBitmap(slot.file);
-    const cardW = 480;
-    const cardH = 360;
-    canvas.width = cardW;
-    canvas.height = cardH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cardW, cardH);
-    const r = Math.min(cardW / bitmap.width, cardH / bitmap.height);
-    const dw = bitmap.width * r;
-    const dh = bitmap.height * r;
-    ctx.drawImage(bitmap, (cardW - dw) / 2, (cardH - dh) / 2, dw, dh);
-    bitmap.close();
+    if (slot.outputUrl) URL.revokeObjectURL(slot.outputUrl);
+    slot.outputUrl = URL.createObjectURL(slot.result.blob);
+    slot.outputImage.src = slot.outputUrl;
+    await slot.outputImage.decode();
   } catch (err) {
-    log(`Failed to decode ${slot.file.name}: ${String(err)}`);
+    slot.status = 'error';
+    slot.error = `Failed to decode output blob: ${String(err)}`;
+    renderCard(slot);
+    log(`Failed to decode pixflow output for ${slot.file.name}: ${String(err)}`);
   }
 }
 
@@ -510,9 +639,9 @@ function renderCard(slot: Slot): void {
       <div class="compare">
         <span class="badge left">before</span>
         <span class="badge right">after</span>
-        <canvas class="input-canvas"></canvas>
+        <img class="preview-image input-image" alt="Original preview" />
         <div class="output-canvas-wrapper">
-          <canvas class="output-canvas"></canvas>
+          <img class="preview-image output-image" alt="Processed preview" />
         </div>
         <div class="slider-handle" role="slider" aria-label="Compare slider"></div>
       </div>
@@ -526,8 +655,8 @@ function renderCard(slot: Slot): void {
       </div>
     `;
     slot.card = card;
-    slot.inputCanvas = card.querySelector<HTMLCanvasElement>('.input-canvas') ?? undefined;
-    slot.outputCanvas = card.querySelector<HTMLCanvasElement>('.output-canvas') ?? undefined;
+    slot.inputImage = card.querySelector<HTMLImageElement>('.input-image') ?? undefined;
+    slot.outputImage = card.querySelector<HTMLImageElement>('.output-image') ?? undefined;
     card.querySelector('.download')?.addEventListener('click', () => downloadSlot(slot));
     card.querySelector('.remove')?.addEventListener('click', () => removeSlot(slot));
     setupCompareSlider(card);
@@ -538,6 +667,12 @@ function renderCard(slot: Slot): void {
   const meta = card.querySelector<HTMLDivElement>('.card-meta');
   const download = card.querySelector<HTMLButtonElement>('.download');
   if (title) title.textContent = slot.file.name;
+  if (slot.inputImage && slot.inputUrl && slot.inputImage.src !== slot.inputUrl) {
+    slot.inputImage.src = slot.inputUrl;
+  }
+  if (slot.outputImage) {
+    slot.outputImage.src = slot.outputUrl ?? '';
+  }
   card.classList.toggle('error', slot.status === 'error');
   if (meta) meta.textContent = metaText(slot);
   if (download) download.disabled = slot.status !== 'done';
@@ -553,7 +688,7 @@ function setupCompareSlider(card: HTMLDivElement): void {
 
   function setSplit(pctRaw: number): void {
     const pct = Math.min(100, Math.max(0, pctRaw));
-    if (wrapper) wrapper.style.width = `${pct.toString()}%`;
+    compare.style.setProperty('--split', `${pct.toString()}%`);
     if (handle) handle.style.left = `${pct.toString()}%`;
   }
 
@@ -580,6 +715,8 @@ function setupCompareSlider(card: HTMLDivElement): void {
     const pct = ((e.clientX - rect.left) / rect.width) * 100;
     setSplit(pct);
   });
+
+  setSplit(50);
 }
 
 function metaText(slot: Slot): string {
@@ -594,7 +731,7 @@ function metaText(slot: Slot): string {
     : '';
   return [
     `${String(r.stats.inputWidth)}×${String(r.stats.inputHeight)} → ${String(r.width)}×${String(r.height)}`,
-    `${prettyFormat(r.stats.format)}${fallback} · ${formatBytes(r.blob.size)} (${(ratio * 100).toFixed(0)}% of source)`,
+    `${prettyFormat(r.stats.format)}${fallback} · ${formatBytes(r.blob.size)} (${formatPercent(ratio * 100)} of source)`,
     `${r.stats.durationMs.toFixed(1)} ms · pool ${String(r.stats.poolReuses)} reuses / ${String(r.stats.poolAllocations)} allocs`,
   ].join('\n');
 }
@@ -609,9 +746,17 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0%';
+  if (value < 0.1) return '<0.1%';
+  if (value < 1) return `${value.toFixed(1)}%`;
+  return `${value.toFixed(0)}%`;
+}
+
 function removeSlot(slot: Slot): void {
   const idx = slots.indexOf(slot);
   if (idx >= 0) slots.splice(idx, 1);
+  if (slot.inputUrl) URL.revokeObjectURL(slot.inputUrl);
   if (slot.outputUrl) URL.revokeObjectURL(slot.outputUrl);
   slot.card?.remove();
   refreshButtons();
@@ -626,7 +771,7 @@ function downloadSlot(slot: Slot): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 async function downloadZip(): Promise<void> {
@@ -787,6 +932,7 @@ function updateProgress(done: number, total: number): void {
   progressFill.style.width = `${pct.toFixed(1)}%`;
   progressLabel.textContent = `${String(done)} / ${String(total)}`;
 }
+
 
 function setStatus(message: string, tone: 'ok' | 'error' | 'warn' | 'neutral' = 'neutral'): void {
   statusEl.textContent = message;
