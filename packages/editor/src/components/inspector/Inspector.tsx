@@ -6,6 +6,8 @@ import type { SectionId } from '../../state/inspector-prefs';
 import { freshState, isFreshEditState } from '../../state/defaults';
 import { GeometrySection } from './GeometrySection';
 import { ColorSection } from './ColorSection';
+import { DetailSection } from './DetailSection';
+import { OverlaySection } from './OverlaySection';
 
 /**
  * Right-rail inspector. Renders nothing until a document is loaded
@@ -85,6 +87,30 @@ export function Inspector() {
           </Accordion.Header>
           <Accordion.Content>
             <ColorSection />
+          </Accordion.Content>
+        </Accordion.Item>
+
+        <Accordion.Item value="detail" className="border-t border-[var(--color-border)]">
+          <Accordion.Header>
+            <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
+              <span>Detail</span>
+              <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
+            </Accordion.Trigger>
+          </Accordion.Header>
+          <Accordion.Content>
+            <DetailSection />
+          </Accordion.Content>
+        </Accordion.Item>
+
+        <Accordion.Item value="overlay" className="border-t border-[var(--color-border)]">
+          <Accordion.Header>
+            <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
+              <span>Overlay</span>
+              <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
+            </Accordion.Trigger>
+          </Accordion.Header>
+          <Accordion.Content>
+            <OverlaySection />
           </Accordion.Content>
         </Accordion.Item>
       </Accordion.Root>
