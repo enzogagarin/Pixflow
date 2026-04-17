@@ -12,6 +12,7 @@
     "format": "prettier --write \"packages/*/src/**/*.{ts,tsx,html,css}\" \"examples/*/*.{ts,tsx,html,css}\"",
     "format:check": "prettier --check \"packages/*/src/**/*.{ts,tsx,html,css}\" \"examples/*/*.{ts,tsx,html,css}\"",
     "dev:demo": "pnpm --filter @pixflow-examples/vanilla-js dev",
+    "dev:editor": "pnpm --filter @pixflow/editor dev",
     "dev:landing": "pnpm --filter landing dev"
   },
   "engines": {

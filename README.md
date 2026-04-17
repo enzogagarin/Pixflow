@@ -210,7 +210,10 @@ pnpm install
 # demo (vanilla-js): http://localhost:5173
 pnpm dev:demo
 
-# landing page: http://localhost:5173 (run separately, not alongside the demo)
+# editor app: http://localhost:5175
+pnpm dev:editor
+
+# landing page: http://localhost:5173 (run alone, not alongside the demo)
 pnpm dev:landing
 
 # repo-wide checks
@@ -225,7 +228,7 @@ Layout:
 packages/
   pixflow/          ← the library (published as "pixflow" on npm)
   landing/          ← marketing page
-  editor/           ← upcoming editor app (skeleton)
+  editor/           ← editor app (boot shell — feature work in PR #3+)
   editor-ml/        ← upcoming ML modules (skeleton)
 examples/
   vanilla-js/       ← interactive demo
