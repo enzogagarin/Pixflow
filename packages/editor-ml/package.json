@@ -2,11 +2,12 @@
   "name": "@pixflow/editor-ml",
   "version": "0.0.0",
   "private": true,
-  "description": "Pixflow editor ML subsystem — same-origin model loader with SHA-256 integrity (PR #9). Face detection lands in PR #10.",
+  "description": "Pixflow editor ML subsystem — same-origin SHA-256-verified model loader + UltraFace ONNX face detection.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./loader": "./src/loader/index.ts"
+    "./loader": "./src/loader/index.ts",
+    "./face": "./src/face/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,6 +16,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.20.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

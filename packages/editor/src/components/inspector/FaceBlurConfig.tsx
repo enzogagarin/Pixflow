@@ -1,10 +1,23 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { produce } from 'immer';
 import { useEditStore } from '../../state/store';
 import { useFaceBlurUi } from '../../state/face-blur-ui';
 import type { EditState, FaceBlurState } from '../../state/types';
+import { faceDetectService, type LoadingPhase } from '../../services/face-detect';
 import { InspectorSlider } from './InspectorSlider';
 import { Segmented } from './Segmented';
+
+const PHASE_LABELS: Record<LoadingPhase, string> = {
+  'fetching-runtime': 'Loading runtime…',
+  'fetching-model': 'Fetching model…',
+  'verifying-model': 'Verifying integrity…',
+  'creating-session': 'Initializing…',
+  ready: 'Detecting…',
+};
+
+function labelFor(phase: LoadingPhase): string {
+  return PHASE_LABELS[phase] ?? phase;
+}
 
 const DEFAULT_FACE_BLUR: FaceBlurState = {
   boxes: [],
@@ -34,6 +47,43 @@ export function FaceBlurConfig() {
   const setPickMode = useFaceBlurUi((s) => s.setPickMode);
 
   const faceBlur = document?.present.faceBlur ?? null;
+
+  const [detecting, setDetecting] = useState(false);
+  const [detectStatus, setDetectStatus] = useState<string | null>(null);
+
+  const onAutoDetect = useCallback(async () => {
+    const doc = useEditStore.getState().document;
+    if (!doc || detecting) return;
+    setDetecting(true);
+    setDetectStatus(labelFor('fetching-runtime'));
+    try {
+      const bitmap = doc.present.source.bitmap;
+      const detected = await faceDetectService.detect(bitmap, {
+        onProgress: (phase) => setDetectStatus(labelFor(phase)),
+        minConfidence: 0.7,
+      });
+      const current = useEditStore.getState().document;
+      if (!current) return;
+      const existing = current.present.faceBlur ?? DEFAULT_FACE_BLUR;
+      commit(
+        produce(current.present, (d) => {
+          d.faceBlur = {
+            ...existing,
+            boxes: [...existing.boxes, ...detected],
+          };
+        }),
+      );
+      setDetectStatus(
+        detected.length === 0
+          ? 'No faces detected.'
+          : `Detected ${String(detected.length)} face${detected.length === 1 ? '' : 's'}.`,
+      );
+    } catch (err) {
+      setDetectStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDetecting(false);
+    }
+  }, [detecting, commit]);
 
   const onToggleEnabled = useCallback(() => {
     const doc = useEditStore.getState().document;
@@ -123,7 +173,6 @@ export function FaceBlurConfig() {
       {!enabled && (
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
           Mask faces or sensitive areas with pixelation or gaussian blur.
-          Auto-detection (BlazeFace) arrives in PR #10b.
         </p>
       )}
 
@@ -152,7 +201,7 @@ export function FaceBlurConfig() {
             getNextState={getStrengthState}
           />
 
-          <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             <button
               type="button"
               onClick={() => setPickMode(!pickMode)}
@@ -162,18 +211,32 @@ export function FaceBlurConfig() {
                   : 'border-[var(--color-border)] bg-[var(--color-bg-elev)] text-[var(--color-fg)] hover:border-[var(--color-accent)]'
               }`}
             >
-              {pickMode ? 'Picking… click image (Esc to finish)' : '+ Add box'}
+              {pickMode ? 'Picking…' : '+ Add box'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void onAutoDetect()}
+              disabled={detecting}
+              className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-1 font-[var(--font-mono)] text-[10px] text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent)] disabled:cursor-wait disabled:opacity-60"
+            >
+              {detecting ? 'Detecting…' : '⚙ Auto-detect'}
             </button>
             {boxes.length > 0 && (
               <button
                 type="button"
                 onClick={onClearBoxes}
-                className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)] underline-offset-2 hover:text-[var(--color-fg)] hover:underline"
+                className="ml-auto font-[var(--font-mono)] text-[10px] text-[var(--color-muted)] underline-offset-2 hover:text-[var(--color-fg)] hover:underline"
               >
                 Clear all
               </button>
             )}
           </div>
+
+          {detectStatus && (
+            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
+              {detectStatus}
+            </p>
+          )}
 
           {boxes.length === 0 ? (
             <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">

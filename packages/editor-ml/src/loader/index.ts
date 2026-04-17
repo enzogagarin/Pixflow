@@ -10,3 +10,4 @@ export {
   type FetchWithIntegrityDeps,
   type FetchWithIntegrityOptions,
 } from './types.js';
+export { MODELS, type ModelName } from './model-registry.js';
