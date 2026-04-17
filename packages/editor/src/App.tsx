@@ -2,6 +2,7 @@ import { CanvasViewport } from './components/CanvasViewport';
 import { DevStatePanel } from './components/DevStatePanel';
 import { DropZone } from './components/DropZone';
 import { HistoryIndicator } from './components/HistoryIndicator';
+import { Inspector } from './components/inspector/Inspector';
 import { WebGPUStatus } from './components/WebGPUStatus';
 import { EditorContextProvider } from './context/EditorContextProvider';
 import { useUndoRedoShortcuts } from './hooks/useUndoRedoShortcuts';
@@ -31,7 +32,7 @@ function AppShell() {
             Pixflow Editor
           </h1>
           <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-[2px] font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-            pre-alpha · PR #5
+            pre-alpha · PR #6
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -41,10 +42,13 @@ function AppShell() {
       </header>
 
       {document ? (
-        <>
-          <CanvasViewport />
-          <DevStatePanel />
-        </>
+        <div className="flex flex-1 gap-4">
+          <div className="flex flex-1 flex-col gap-4">
+            <CanvasViewport />
+            <DevStatePanel />
+          </div>
+          <Inspector />
+        </div>
       ) : (
         <div className="flex flex-1 items-center justify-center">
           <DropZone />
@@ -53,7 +57,7 @@ function AppShell() {
 
       <footer className="flex items-center justify-between font-[var(--font-mono)] text-[11px] text-[var(--color-muted)]">
         <span>imported pixflow v{pixflowPkg.version}</span>
-        <span>Drop image · ⌘Z undo · ⇧⌘Z redo · Space pan · / compare · +/− zoom</span>
+        <span>Drop image · ⌘Z undo · ⇧⌘Z redo · Space pan · / compare · +/− zoom · 2× click slider = reset</span>
       </footer>
     </main>
   );
