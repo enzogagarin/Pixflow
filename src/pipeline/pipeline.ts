@@ -14,6 +14,7 @@ import { ResizeFilter, type ResizeParams } from '../filters/resize.js';
 import { Rotate90Filter, type Rotate90Params } from '../filters/rotate90.js';
 import { SaturationFilter, type SaturationParams } from '../filters/saturation.js';
 import { UnsharpMaskFilter, type UnsharpMaskParams } from '../filters/unsharp-mask.js';
+import { WatermarkFilter, type WatermarkParams } from '../filters/watermark.js';
 import { WhiteBalanceFilter, type WhiteBalanceParams } from '../filters/white-balance.js';
 import { getPreset, type PresetName } from '../presets.js';
 import { imageToTexture, sourceToImageBitmap } from '../resources/image-import.js';
@@ -187,6 +188,12 @@ export class Pipeline {
   /** Unsharp mask: `original + (original − blur) × amount`. */
   unsharpMask(params: UnsharpMaskParams): this {
     this.filters.push(new UnsharpMaskFilter(params));
+    return this;
+  }
+
+  /** Overlay a watermark image with alpha compositing. */
+  watermark(params: WatermarkParams): this {
+    this.filters.push(new WatermarkFilter(params));
     return this;
   }
 
@@ -820,6 +827,9 @@ function cloneFilterInstance(filter: Filter): Filter | null {
   }
   if (filter instanceof UnsharpMaskFilter) {
     return new UnsharpMaskFilter({ ...filter.params });
+  }
+  if (filter instanceof WatermarkFilter) {
+    return new WatermarkFilter({ ...filter.params });
   }
   if (filter instanceof CurvesFilter) {
     return new CurvesFilter({

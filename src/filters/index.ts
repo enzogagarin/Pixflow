@@ -13,6 +13,11 @@ export { CropFilter, type CropParams } from './crop.js';
 export { Rotate90Filter, type Rotate90Params } from './rotate90.js';
 export { FlipFilter, type FlipParams, type FlipAxis } from './flip.js';
 export { PadFilter, type PadParams, type PadColor } from './pad.js';
+export {
+  WatermarkFilter,
+  type WatermarkParams,
+  type WatermarkPosition,
+} from './watermark.js';
 export { CurvesFilter, buildLut, type CurvesParams, type CurvePoint } from './curves.js';
 export {
   WhiteBalanceFilter,
