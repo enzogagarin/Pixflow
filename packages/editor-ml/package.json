@@ -2,14 +2,22 @@
   "name": "@pixflow/editor-ml",
   "version": "0.0.0",
   "private": true,
-  "description": "Pixflow editor ML modules (face detection; skeleton — no implementation yet)",
+  "description": "Pixflow editor ML subsystem — same-origin model loader with SHA-256 integrity (PR #9). Face detection lands in PR #10.",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./loader": "./src/loader/index.ts"
+  },
   "scripts": {
-    "typecheck": "echo 'editor-ml skeleton has no code yet; skipping typecheck' && exit 0",
-    "test": "echo 'editor-ml skeleton has no tests yet; skipping' && exit 0",
-    "build": "echo 'editor-ml skeleton has no code yet; skipping build' && exit 0"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   }
 }
