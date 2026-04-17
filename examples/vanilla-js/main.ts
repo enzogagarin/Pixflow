@@ -311,6 +311,13 @@ function clearAll(): void {
   updateVideoPanel();
   progressPanel.hidden = true;
   benchPanel.hidden = true;
+  if (smokePreviewUrl) {
+    URL.revokeObjectURL(smokePreviewUrl);
+    smokePreviewUrl = null;
+  }
+  smokePreviewImg.removeAttribute('src');
+  smokeResultEl.hidden = true;
+  smokeStatusEl.textContent = '';
   refreshButtons();
 }
 
