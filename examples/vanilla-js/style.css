@@ -512,7 +512,11 @@ button.ghost.danger {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  clip-path: inset(0 calc(100% - var(--split)) 0 0);
+  /* Reveal the output (processed) image on the RIGHT side of the slider,
+     matching the "before" (input) / "after" (output) badge labels. The
+     left inset grows with --split so the wrapper's visible region extends
+     from the slider handle to the right edge. */
+  clip-path: inset(0 0 0 var(--split));
 }
 
 .compare .output-canvas-wrapper canvas {
