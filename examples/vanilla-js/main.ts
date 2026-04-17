@@ -46,6 +46,7 @@ const resultsEl = qs<HTMLElement>('#results');
 const logEl = qs<HTMLElement>('#log');
 const smokePixelateBtn = qs<HTMLButtonElement>('#smoke-pixelate');
 const smokeRegionBlurBtn = qs<HTMLButtonElement>('#smoke-region-blur');
+const smokeResetBtn = qs<HTMLButtonElement>('#smoke-reset');
 const smokeStatusEl = qs<HTMLSpanElement>('#smoke-status');
 const smokeResultEl = qs<HTMLDivElement>('#smoke-result');
 const smokePreviewImg = qs<HTMLImageElement>('#smoke-preview');
@@ -193,6 +194,17 @@ function bindUi(): void {
   zipBtn.addEventListener('click', () => void downloadZip());
   smokePixelateBtn.addEventListener('click', () => void runSmoke('pixelate'));
   smokeRegionBlurBtn.addEventListener('click', () => void runSmoke('regionBlur'));
+  smokeResetBtn.addEventListener('click', resetSmoke);
+}
+
+function resetSmoke(): void {
+  if (smokePreviewUrl) {
+    URL.revokeObjectURL(smokePreviewUrl);
+    smokePreviewUrl = null;
+  }
+  smokePreviewImg.removeAttribute('src');
+  smokeResultEl.hidden = true;
+  smokeStatusEl.textContent = '';
 }
 
 async function runSmoke(kind: 'pixelate' | 'regionBlur'): Promise<void> {
@@ -311,13 +323,7 @@ function clearAll(): void {
   updateVideoPanel();
   progressPanel.hidden = true;
   benchPanel.hidden = true;
-  if (smokePreviewUrl) {
-    URL.revokeObjectURL(smokePreviewUrl);
-    smokePreviewUrl = null;
-  }
-  smokePreviewImg.removeAttribute('src');
-  smokeResultEl.hidden = true;
-  smokeStatusEl.textContent = '';
+  resetSmoke();
   refreshButtons();
 }
 
