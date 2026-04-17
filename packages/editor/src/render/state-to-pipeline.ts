@@ -1,4 +1,4 @@
-import { Pipeline } from 'pixflow';
+import { Pipeline, type ResizeParams } from 'pixflow';
 import type { EditState } from '../state/types';
 
 export type RenderMode = 'preview' | 'export';
@@ -74,8 +74,25 @@ export function stateToPipeline(
   // 4. Watermark (face-blur deferred: see PR #8 / #10)
   if (state.watermark) p.watermark(state.watermark);
 
-  // 5. Output: resize then encode
-  if (state.output.resize) p.resize(state.output.resize);
+  // 5. Output: resize then encode.
+  //
+  // EditState's ResizeSpec uses {maxWidth?, maxHeight?, fit} (the
+  // user-facing "upper bound" vocabulary), while pixflow's ResizeParams
+  // uses {width?, height?, fit}. Bridge here. If neither bound is set,
+  // skip the resize call entirely — pixflow throws when both are missing
+  // ("resize requires at least one of width or height"), and a spec with
+  // no bounds is semantically a no-op anyway.
+  if (state.output.resize) {
+    const { maxWidth, maxHeight, fit } = state.output.resize;
+    if (maxWidth !== undefined || maxHeight !== undefined) {
+      const params: ResizeParams = {
+        fit,
+        ...(maxWidth !== undefined ? { width: maxWidth } : {}),
+        ...(maxHeight !== undefined ? { height: maxHeight } : {}),
+      };
+      p.resize(params);
+    }
+  }
   p.encode(
     mode === 'preview'
       ? { format: 'image/png', quality: 1 }

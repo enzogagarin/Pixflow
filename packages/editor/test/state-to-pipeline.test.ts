@@ -205,7 +205,7 @@ describe('stateToPipeline — output + modes', () => {
     expect(mock.resize).not.toHaveBeenCalled();
   });
 
-  it('forwards resize spec when set', () => {
+  it('bridges EditState.maxWidth → pixflow.width when only width is set', () => {
     const mock = createMockPipeline();
     stateToPipeline(
       makeState({
@@ -219,7 +219,45 @@ describe('stateToPipeline — output + modes', () => {
       'export',
       asPipelineFactory(mock),
     );
-    expect(mock.resize).toHaveBeenCalledWith({ maxWidth: 1200, fit: 'inside' });
+    expect(mock.resize).toHaveBeenCalledWith({ width: 1200, fit: 'inside' });
+  });
+
+  it('bridges both maxWidth + maxHeight when set', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        output: {
+          resize: { maxWidth: 1600, maxHeight: 900, fit: 'cover' },
+          format: 'image/webp',
+          quality: 0.9,
+          metadataStrip: { mode: 'aggressive' },
+        },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.resize).toHaveBeenCalledWith({
+      width: 1600,
+      height: 900,
+      fit: 'cover',
+    });
+  });
+
+  it('skips resize when spec has neither maxWidth nor maxHeight (pixflow rejects empty)', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        output: {
+          resize: { fit: 'inside' },
+          format: 'image/webp',
+          quality: 0.9,
+          metadataStrip: { mode: 'aggressive' },
+        },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.resize).not.toHaveBeenCalled();
   });
 
   it('in export mode, encode uses state.output.format + quality', () => {
