@@ -89,8 +89,17 @@
           <button id="smoke-region-blur" type="button" class="ghost">Smoke: blur center</button>
           <span id="smoke-status" class="status small" style="margin-left: 8px;"></span>
         </div>
-        <div id="smoke-result" class="smoke-result" hidden>
-          <img id="smoke-preview" alt="Smoke test preview" />
+        <div
+          id="smoke-result"
+          class="smoke-result"
+          hidden
+          style="margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden; max-width: 640px;"
+        >
+          <img
+            id="smoke-preview"
+            alt="Smoke test preview"
+            style="display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; background: #111;"
+          />
         </div>
       </section>
 
