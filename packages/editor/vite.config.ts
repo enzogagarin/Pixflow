@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
@@ -30,5 +31,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['pixflow'],
+  },
+  test: {
+    // Default to node env (fast, no DOM). Tests that need a DOM
+    // (React renderHook for hook tests) opt-in via the
+    // `// @vitest-environment jsdom` directive at the top of the file.
+    environment: 'node',
   },
 });
