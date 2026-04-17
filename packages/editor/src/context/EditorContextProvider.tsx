@@ -1,18 +1,26 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { createEditorContext, type EditorContext } from './editor-context';
 
 const Ctx = createContext<EditorContext | null>(null);
 
 /**
- * Mounts a single EditorContext for the editor app's lifetime. Calls
- * dispose() on unmount (useful in tests; in production the only unmount
- * is page navigation, where browser cleanup also runs). React 19 strict
- * mode double-mounts effects in dev — the dispose path is idempotent
- * by design, so the second mount cleanly creates a fresh context.
+ * Mounts a single EditorContext for the editor app's lifetime.
+ *
+ * Why no dispose-on-unmount: React 19 StrictMode double-mounts effects
+ * in dev (mount → cleanup → re-mount). Disposing on the cleanup pass
+ * destroys the GPUDevice; the re-mount then reuses the same memoized
+ * `ctx` (useMemo persists across the strict-mode test cycle), so its
+ * `ensure()` rejects forever after with "EditorContext disposed".
+ *
+ * The session paradigm is "one context per page load" — when the user
+ * navigates away or closes the tab, the browser tears down all GPU
+ * resources automatically. There's no realistic unmount that ISN'T
+ * also a page teardown, so an explicit dispose-on-unmount earns
+ * nothing in production but breaks dev. The `dispose()` API stays on
+ * EditorContext itself for test-driven teardown.
  */
 export function EditorContextProvider({ children }: { children: ReactNode }) {
   const ctx = useMemo(() => createEditorContext(), []);
-  useEffect(() => () => ctx.dispose(), [ctx]);
   return <Ctx.Provider value={ctx}>{children}</Ctx.Provider>;
 }
 
