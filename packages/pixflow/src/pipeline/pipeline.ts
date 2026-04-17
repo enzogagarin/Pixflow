@@ -16,6 +16,8 @@ import { SaturationFilter, type SaturationParams } from '../filters/saturation.j
 import { UnsharpMaskFilter, type UnsharpMaskParams } from '../filters/unsharp-mask.js';
 import { WatermarkFilter, type WatermarkParams } from '../filters/watermark.js';
 import { WhiteBalanceFilter, type WhiteBalanceParams } from '../filters/white-balance.js';
+import { PixelateFilter, type PixelateParams } from '../filters/pixelate.js';
+import { RegionBlurFilter, type RegionBlurParams } from '../filters/region-blur.js';
 import { getPreset, type PresetName } from '../presets.js';
 import { imageToTexture, sourceToImageBitmap } from '../resources/image-import.js';
 import { TexturePool } from '../resources/texture-pool.js';
@@ -199,6 +201,27 @@ export class Pipeline {
   /** Overlay a watermark image with alpha compositing. */
   watermark(params: WatermarkParams): this {
     this.filters.push(new WatermarkFilter(params));
+    return this;
+  }
+
+  /**
+   * Replace pixels inside each region with a mosaic of blockSize × blockSize
+   * blocks. Outside regions are untouched. Regions are in the input-texture's
+   * pixel coordinate space at the point this filter runs in the chain — if
+   * you resize or crop first, remap regions yourself.
+   */
+  pixelate(params: PixelateParams): this {
+    this.filters.push(new PixelateFilter(params));
+    return this;
+  }
+
+  /**
+   * Apply a 2D gaussian blur (sigma in pixels) restricted to the given regions.
+   * Pixels outside regions are passed through unchanged. Same coordinate-space
+   * rules as pixelate().
+   */
+  regionBlur(params: RegionBlurParams): this {
+    this.filters.push(new RegionBlurFilter(params));
     return this;
   }
 
