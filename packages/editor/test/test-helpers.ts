@@ -85,3 +85,12 @@ export function makeState(overrides: Partial<EditState> = {}): EditState {
 export function asPipelineFactory(mock: MockPipeline): () => Pipeline {
   return () => mock as unknown as Pipeline;
 }
+
+/**
+ * Sentinel ImageBitmap-shaped object for engine tests. The PreviewEngine
+ * never reads bitmap pixels — it only forwards the reference to
+ * pipeline.run() — so an empty object cast to ImageBitmap is safe.
+ */
+export function makeBitmap(label: string): ImageBitmap {
+  return { __label: label } as unknown as ImageBitmap;
+}

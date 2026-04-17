@@ -2,6 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { stateToPipeline } from '../src/render/state-to-pipeline';
 import { asPipelineFactory, createMockPipeline, makeState } from './test-helpers';
 
+describe('stateToPipeline — empty-state guard', () => {
+  it('appends brightness(0) when no other filter would be added (pixflow rejects empty pipelines)', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(makeState(), 'preview', asPipelineFactory(mock));
+    // Identity state: no crop, no rotate, no flip, all colors 0, no detail,
+    // no watermark, no resize. Without the no-op, pixflow's runOne would
+    // throw "Pipeline has no filters". The brightness(0) guard prevents that;
+    // pixflow then strips brightness(0) as identity at runtime.
+    expect(mock.brightness).toHaveBeenCalledWith(0);
+  });
+
+  it('does NOT append brightness(0) when any other filter is present', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        geometry: { crop: null, rotate: 90, flip: { h: false, v: false } },
+      }),
+      'preview',
+      asPipelineFactory(mock),
+    );
+    // rotate90 is the real filter; the no-op shouldn't fire.
+    expect(mock.brightness).not.toHaveBeenCalled();
+  });
+});
+
 describe('stateToPipeline — geometry', () => {
   it('omits all geometry calls when crop=null, rotate=0, flip=false/false', () => {
     const mock = createMockPipeline();
@@ -72,7 +97,14 @@ describe('stateToPipeline — geometry', () => {
 describe('stateToPipeline — color', () => {
   it('skips identity color filters (all params zero)', () => {
     const mock = createMockPipeline();
-    stateToPipeline(makeState(), 'export', asPipelineFactory(mock));
+    // Add a non-color filter (rotate) so the empty-state brightness(0)
+    // guard doesn't fire — that guard is tested separately above. This
+    // test isolates the "color identity → no color call" contract.
+    stateToPipeline(
+      makeState({ geometry: { crop: null, rotate: 90, flip: { h: false, v: false } } }),
+      'export',
+      asPipelineFactory(mock),
+    );
     expect(mock.brightness).not.toHaveBeenCalled();
     expect(mock.contrast).not.toHaveBeenCalled();
     expect(mock.saturation).not.toHaveBeenCalled();
@@ -205,7 +237,7 @@ describe('stateToPipeline — output + modes', () => {
     expect(mock.resize).not.toHaveBeenCalled();
   });
 
-  it('forwards resize spec when set', () => {
+  it('bridges EditState.maxWidth → pixflow.width when only width is set', () => {
     const mock = createMockPipeline();
     stateToPipeline(
       makeState({
@@ -219,7 +251,45 @@ describe('stateToPipeline — output + modes', () => {
       'export',
       asPipelineFactory(mock),
     );
-    expect(mock.resize).toHaveBeenCalledWith({ maxWidth: 1200, fit: 'inside' });
+    expect(mock.resize).toHaveBeenCalledWith({ width: 1200, fit: 'inside' });
+  });
+
+  it('bridges both maxWidth + maxHeight when set', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        output: {
+          resize: { maxWidth: 1600, maxHeight: 900, fit: 'cover' },
+          format: 'image/webp',
+          quality: 0.9,
+          metadataStrip: { mode: 'aggressive' },
+        },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.resize).toHaveBeenCalledWith({
+      width: 1600,
+      height: 900,
+      fit: 'cover',
+    });
+  });
+
+  it('skips resize when spec has neither maxWidth nor maxHeight (pixflow rejects empty)', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        output: {
+          resize: { fit: 'inside' },
+          format: 'image/webp',
+          quality: 0.9,
+          metadataStrip: { mode: 'aggressive' },
+        },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.resize).not.toHaveBeenCalled();
   });
 
   it('in export mode, encode uses state.output.format + quality', () => {
