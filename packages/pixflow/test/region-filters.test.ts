@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PixelateFilter, type Region } from '../src/filters/pixelate.js';
 import { RegionBlurFilter } from '../src/filters/region-blur.js';
+import { Pipeline } from '../src/pipeline/pipeline.js';
 import { PixflowError } from '../src/errors.js';
 
 const R: Region = { x: 10, y: 20, w: 80, h: 60 };
@@ -126,5 +127,25 @@ describe('RegionBlurFilter', () => {
     expect(() =>
       new RegionBlurFilter({ regions: [{ x: 0, y: 0, w: 10, h: 0 }], sigma: 4 }),
     ).toThrow(PixflowError);
+  });
+});
+
+describe('Pipeline chaining', () => {
+  it('pixelate() is chainable and returns the pipeline', () => {
+    const p = Pipeline.create({});
+    const returned = p.pixelate({ regions: [R], blockSize: 8 });
+    expect(returned).toBe(p);
+  });
+
+  it('regionBlur() is chainable and returns the pipeline', () => {
+    const p = Pipeline.create({});
+    const returned = p.regionBlur({ regions: [R], sigma: 4 });
+    expect(returned).toBe(p);
+  });
+
+  it('invalid params throw through the chain', () => {
+    const p = Pipeline.create({});
+    expect(() => p.pixelate({ regions: [R], blockSize: 1 })).toThrow(PixflowError);
+    expect(() => p.regionBlur({ regions: [R], sigma: 0 })).toThrow(PixflowError);
   });
 });

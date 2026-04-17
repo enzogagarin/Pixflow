@@ -31,5 +31,12 @@ export {
   SEPIA_MATRIX,
   type ColorMatrixParams,
 } from './color-matrix.js';
+export {
+  PixelateFilter,
+  MAX_REGIONS,
+  type Region,
+  type PixelateParams,
+} from './pixelate.js';
+export { RegionBlurFilter, type RegionBlurParams } from './region-blur.js';
 export { ComputeFilter, WORKGROUP_SIZE, alignTo } from './compute-filter.js';
 export type { ComputeFilterShape } from './compute-filter.js';
