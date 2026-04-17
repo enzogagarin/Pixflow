@@ -95,6 +95,15 @@ export type { ExifOrientation } from './utils/exif.js';
 export { PRESETS, getPreset, listPresets } from './presets.js';
 export type { PresetName, PresetSpec } from './presets.js';
 
+export {
+  VideoProcessor,
+  type VideoFrame,
+  type ExtractedVideoFrame,
+  type ExtractFramesOptions,
+  type ProcessFramesOptions,
+  type GenerateThumbnailsOptions,
+} from './video/index.js';
+
 export type {
   Dims,
   EncodeFormat,

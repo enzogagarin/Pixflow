@@ -5,6 +5,7 @@ import {
   Pipeline,
   PixflowError,
   PRESETS,
+  VideoProcessor,
   type PipelineResult,
   type PresetName,
   type PresetSpec,
@@ -20,7 +21,14 @@ const fileInput = qs<HTMLInputElement>('#file-input');
 const browseBtn = qs<HTMLButtonElement>('#browse');
 const concurrencyInput = qs<HTMLInputElement>('#concurrency');
 const concurrencyOut = qs<HTMLOutputElement>('#concurrency-value');
+const watermarkToggle = qs<HTMLInputElement>('#watermark-toggle');
 const benchToggle = qs<HTMLInputElement>('#bench-toggle');
+const filterTags = qs<HTMLDivElement>('#filter-tags');
+const videoPanel = qs<HTMLElement>('#video-panel');
+const videoNameEl = qs<HTMLDivElement>('#video-name');
+const videoHintEl = qs<HTMLParagraphElement>('#video-hint');
+const videoExtractBtn = qs<HTMLButtonElement>('#video-extract');
+const videoThumbsBtn = qs<HTMLButtonElement>('#video-thumbs');
 const runBtn = qs<HTMLButtonElement>('#run');
 const cancelBtn = qs<HTMLButtonElement>('#cancel');
 const zipBtn = qs<HTMLButtonElement>('#download-zip');
@@ -51,14 +59,27 @@ interface Slot {
 let slots: Slot[] = [];
 let abort: AbortController | null = null;
 let activePreset: PresetName = 'forum-post';
+let pendingVideo: File | null = null;
+let watermarkBitmap: ImageBitmap | null = null;
 
 const sharedPipeline = Pipeline.create();
+const videoProcessor = new VideoProcessor();
+const videoSupported = VideoProcessor.isSupported();
+
+const PRESET_FILTER_TAGS: Record<PresetName, readonly string[]> = {
+  'forum-post': ['orient', 'resize', 'unsharpMask', 'encode'],
+  'ecommerce-thumbnail': ['orient', 'resize', 'unsharpMask', 'encode'],
+  'blog-hero': ['orient', 'resize', 'saturation', 'unsharpMask', 'encode'],
+  avatar: ['orient', 'resize', 'unsharpMask', 'encode'],
+};
 
 void boot();
 
 async function boot(): Promise<void> {
   renderPresetGrid();
+  renderFilterTags();
   bindUi();
+  updateVideoPanel();
 
   const supported = await isWebGPUSupported();
   if (!supported) {
@@ -69,7 +90,7 @@ async function boot(): Promise<void> {
     runBtn.disabled = true;
     return;
   }
-  setStatus('WebGPU ready · drop images to start', 'ok');
+  setStatus('WebGPU ready · drop images or videos to start', 'ok');
 
   // Surface the GPU vendor/architecture so users can correlate perf with
   // their hardware. Adapter info is best-effort — older browsers omit it.
@@ -92,6 +113,11 @@ async function boot(): Promise<void> {
     ? 'AVIF encoding supported'
     : 'AVIF unsupported · falls back to WebP';
   avifStatusEl.classList.add(avif ? 'ok' : 'warn');
+
+  if (!videoSupported) {
+    log('Video features disabled: WebCodecs APIs are unavailable in this browser.');
+    videoHintEl.textContent = 'Video frame extraction requires browser WebCodecs support.';
+  }
 }
 
 function renderPresetGrid(): void {
@@ -111,6 +137,7 @@ function renderPresetGrid(): void {
       for (const t of presetGrid.querySelectorAll('.preset-tile')) {
         t.classList.toggle('active', t === tile);
       }
+      renderFilterTags();
     });
     presetGrid.appendChild(tile);
   }
@@ -120,6 +147,7 @@ function bindUi(): void {
   concurrencyInput.addEventListener('input', () => {
     concurrencyOut.value = concurrencyInput.value;
   });
+  watermarkToggle.addEventListener('input', renderFilterTags);
 
   browseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -134,7 +162,7 @@ function bindUi(): void {
   });
   fileInput.addEventListener('change', () => {
     const files = Array.from(fileInput.files ?? []);
-    if (files.length > 0) addFiles(files);
+    if (files.length > 0) handleIncomingFiles(files);
     fileInput.value = '';
   });
 
@@ -146,12 +174,12 @@ function bindUi(): void {
   dropzone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropzone.classList.remove('drag');
-    const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
-      f.type.startsWith('image/'),
-    );
-    if (files.length > 0) addFiles(files);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) handleIncomingFiles(files);
   });
 
+  videoExtractBtn.addEventListener('click', () => void extractVideoFrames());
+  videoThumbsBtn.addEventListener('click', () => void extractVideoThumbnails());
   runBtn.addEventListener('click', () => void runBatch());
   cancelBtn.addEventListener('click', () => abort?.abort());
   clearBtn.addEventListener('click', clearAll);
@@ -169,6 +197,46 @@ function addFiles(files: File[]): void {
   log(`Loaded ${String(files.length)} file(s) · queue total ${String(slots.length)}`);
 }
 
+function handleIncomingFiles(files: File[]): void {
+  const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+  const videoFiles = files.filter((f) => f.type.startsWith('video/'));
+  if (imageFiles.length > 0) addFiles(imageFiles);
+  if (videoFiles.length > 0) {
+    pendingVideo = videoFiles[0] ?? null;
+    if (videoFiles.length > 1) {
+      log(`Detected ${String(videoFiles.length)} videos; using ${videoFiles[0]?.name ?? 'first file'}.`);
+    }
+    updateVideoPanel();
+  }
+}
+
+function renderFilterTags(): void {
+  const tags = [...(PRESET_FILTER_TAGS[activePreset] ?? [])];
+  if (watermarkToggle.checked) tags.push('watermark');
+  filterTags.replaceChildren();
+  for (const name of tags) {
+    const tag = document.createElement('span');
+    tag.className = `filter-tag${name === 'watermark' ? ' active' : ''}`;
+    tag.textContent = name;
+    filterTags.appendChild(tag);
+  }
+}
+
+function updateVideoPanel(): void {
+  videoPanel.hidden = pendingVideo === null;
+  if (!pendingVideo) return;
+  videoNameEl.textContent = pendingVideo.name;
+  if (videoSupported) {
+    videoExtractBtn.disabled = false;
+    videoThumbsBtn.disabled = false;
+    videoHintEl.textContent = 'Extract frames from video and process them with the selected preset.';
+  } else {
+    videoExtractBtn.disabled = true;
+    videoThumbsBtn.disabled = true;
+    videoHintEl.textContent = 'Video features are unavailable in this browser (WebCodecs not supported).';
+  }
+}
+
 function refreshButtons(): void {
   const pending = slots.some((s) => s.status === 'pending');
   const done = slots.some((s) => s.status === 'done');
@@ -184,6 +252,8 @@ function clearAll(): void {
     if (s.outputUrl) URL.revokeObjectURL(s.outputUrl);
   }
   slots = [];
+  pendingVideo = null;
+  updateVideoPanel();
   progressPanel.hidden = true;
   benchPanel.hidden = true;
   refreshButtons();
@@ -198,6 +268,21 @@ async function runBatch(): Promise<void> {
 
   sharedPipeline.reset();
   preset.apply(sharedPipeline);
+  if (watermarkToggle.checked) {
+    try {
+      sharedPipeline.watermark({
+        image: await getWatermarkBitmap(),
+        position: 'bottom-right',
+        opacity: 0.3,
+        scale: 0.15,
+      });
+    } catch (err) {
+      const msg = err instanceof PixflowError ? `[${err.code}] ${err.message}` : String(err);
+      log(`Watermark setup failed: ${msg}`);
+      setStatus('Could not create watermark image. See log for details.', 'warn');
+      return;
+    }
+  }
 
   abort = new AbortController();
   refreshButtons();
@@ -558,6 +643,124 @@ async function downloadZip(): Promise<void> {
   a.remove();
   URL.revokeObjectURL(url);
   log(`ZIP · ${String(done.length)} file(s) · ${formatBytes(zip.size)}`);
+}
+
+async function extractVideoFrames(): Promise<void> {
+  if (!pendingVideo) return;
+  if (!videoSupported) {
+    log('Video extraction unavailable: browser does not expose required WebCodecs APIs.');
+    return;
+  }
+  videoExtractBtn.disabled = true;
+  videoThumbsBtn.disabled = true;
+  try {
+    const frames = await videoProcessor.extractFrames(pendingVideo, {
+      intervalMs: 1000,
+      maxFrames: 12,
+    });
+    const files = await extractedFramesToFiles(pendingVideo, frames, 'frame');
+    if (files.length > 0) addFiles(files);
+    log(`Video frames extracted · ${String(files.length)} image(s) from ${pendingVideo.name}`);
+  } catch (err) {
+    const msg = err instanceof PixflowError ? `[${err.code}] ${err.message}` : String(err);
+    log(`Video frame extraction failed: ${msg}`);
+  } finally {
+    updateVideoPanel();
+  }
+}
+
+async function extractVideoThumbnails(): Promise<void> {
+  if (!pendingVideo) return;
+  if (!videoSupported) {
+    log('Video thumbnails unavailable: browser does not expose required WebCodecs APIs.');
+    return;
+  }
+  videoExtractBtn.disabled = true;
+  videoThumbsBtn.disabled = true;
+  try {
+    const thumbs = await videoProcessor.generateThumbnails(pendingVideo, { count: 8, width: 640 });
+    const base = pendingVideo.name.replace(/\.[^.]+$/, '');
+    const files = thumbs.map((blob, i) => {
+      const n = String(i + 1).padStart(3, '0');
+      return new File([blob], `${base}.thumb-${n}.webp`, { type: blob.type || 'image/webp' });
+    });
+    addFiles(files);
+    log(`Auto thumbnails extracted · ${String(files.length)} image(s) from ${pendingVideo.name}`);
+  } catch (err) {
+    const msg = err instanceof PixflowError ? `[${err.code}] ${err.message}` : String(err);
+    log(`Video thumbnail extraction failed: ${msg}`);
+  } finally {
+    updateVideoPanel();
+  }
+}
+
+async function extractedFramesToFiles(
+  sourceVideo: File,
+  frames: readonly { timestamp: number; bitmap: ImageBitmap }[],
+  kind: 'frame' | 'thumb',
+): Promise<File[]> {
+  const base = sourceVideo.name.replace(/\.[^.]+$/, '');
+  const out: File[] = [];
+  for (const [i, frame] of frames.entries()) {
+    try {
+      const blob = await bitmapToWebp(frame.bitmap);
+      const n = String(i + 1).padStart(3, '0');
+      out.push(
+        new File([blob], `${base}.${kind}-${n}.${String(frame.timestamp)}ms.webp`, {
+          type: blob.type || 'image/webp',
+        }),
+      );
+    } finally {
+      frame.bitmap.close();
+    }
+  }
+  return out;
+}
+
+async function bitmapToWebp(bitmap: ImageBitmap): Promise<Blob> {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('no 2d context');
+    ctx.drawImage(bitmap, 0, 0);
+    return canvas.convertToBlob({ type: 'image/webp', quality: 0.88 });
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no 2d context');
+  ctx.drawImage(bitmap, 0, 0);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('toBlob returned null'))),
+      'image/webp',
+      0.88,
+    );
+  });
+}
+
+async function getWatermarkBitmap(): Promise<ImageBitmap> {
+  if (watermarkBitmap) return watermarkBitmap;
+  if (typeof OffscreenCanvas === 'undefined') {
+    throw new Error('OffscreenCanvas is not available');
+  }
+  const width = 256;
+  const height = 96;
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no 2d context');
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(10, 20, width - 20, height - 32);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 40px ui-monospace, monospace';
+  ctx.fillText('pixflow', width / 2, height / 2 + 2);
+  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  watermarkBitmap = await createImageBitmap(blob);
+  return watermarkBitmap;
 }
 
 function outputName(slot: Slot): string {

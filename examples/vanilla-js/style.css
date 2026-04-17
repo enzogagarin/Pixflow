@@ -234,7 +234,7 @@ header {
 
 .row.knobs {
   display: grid;
-  grid-template-columns: auto 200px auto 1fr;
+  grid-template-columns: auto 200px auto auto 1fr;
   align-items: center;
   gap: 12px;
   font-family: var(--mono);
@@ -256,6 +256,75 @@ header {
 
 .bench-toggle input {
   accent-color: var(--accent);
+}
+
+.filter-tags-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-tags-label {
+  font-family: var(--mono);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-tag {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg-elev-2);
+}
+
+.filter-tag.active {
+  border-color: var(--accent);
+  color: var(--fg);
+  background: var(--accent-dim);
+}
+
+.video-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--bg-elev-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.video-panel-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.video-panel-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.video-panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.video-panel-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
 }
 
 .button-row {
@@ -583,6 +652,9 @@ button.ghost.danger {
 @media (max-width: 720px) {
   .row.knobs {
     grid-template-columns: 1fr;
+  }
+  .bench-toggle {
+    justify-self: start;
   }
   .bench-row {
     grid-template-columns: 1fr;
