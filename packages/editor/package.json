@@ -16,6 +16,9 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-toggle-group": "^1.1.11",
     "immer": "^11.1.4",
     "pixflow": "workspace:*",
     "react": "^19.2.5",
