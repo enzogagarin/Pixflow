@@ -282,7 +282,7 @@ export class Pipeline {
    */
   clone(): Pipeline {
     const copy = new Pipeline(this.options);
-    copy.filters = this.filters.slice();
+    copy.filters = this.filters.map((f) => cloneFilterInstance(f) ?? f);
     copy.encodeOptions = this.encodeOptions ? { ...this.encodeOptions } : null;
     return copy;
   }
@@ -347,134 +347,139 @@ export class Pipeline {
     const textureFormat = this.options.textureFormat ?? DEFAULT_FORMAT;
     const pool = this.resolvePool(device);
 
-    let effectiveFilters = await expandAutoOrient(this.filters, source);
-    // Skip identity filters — brightness(0), contrast(0), curves linear, etc.
-    effectiveFilters = effectiveFilters.filter((f) => f.isIdentity !== true);
-    if (this.logLevel === 'debug') {
-      console.warn(
-        `[pixflow] running ${String(effectiveFilters.length)} filter(s):`,
-        effectiveFilters.map((f) => f.name).join(', '),
-      );
-    }
+    const isolatedFilters = isolateFiltersForRun(await expandAutoOrient(this.filters, source));
+    try {
+      let effectiveFilters = isolatedFilters.map((x) => x.filter);
+      // Skip identity filters — brightness(0), contrast(0), curves linear, etc.
+      effectiveFilters = effectiveFilters.filter((f) => f.isIdentity !== true);
+      if (this.logLevel === 'debug') {
+        console.warn(
+          `[pixflow] running ${String(effectiveFilters.length)} filter(s):`,
+          effectiveFilters.map((f) => f.name).join(', '),
+        );
+      }
 
-    if (effectiveFilters.length === 0) {
-      // All filters were identity — still need to produce output. Import,
-      // encode, and return. We don't run a compute pass.
+      if (effectiveFilters.length === 0) {
+        // All filters were identity — still need to produce output. Import,
+        // encode, and return. We don't run a compute pass.
+        const imported = await imageToTexture(device, source, { format: textureFormat });
+        try {
+          const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
+          const encoded = await textureToBlob(device, imported.texture, readbackOptions);
+          const durationMs = now() - start;
+          const requestedFormat = readbackOptions.format;
+          return {
+            blob: encoded.blob,
+            width: imported.width,
+            height: imported.height,
+            stats: {
+              durationMs,
+              filterCount: 0,
+              inputWidth: imported.width,
+              inputHeight: imported.height,
+              outputWidth: imported.width,
+              outputHeight: imported.height,
+              poolReuses: pool.stats.reuses,
+              poolAllocations: pool.stats.allocations,
+              cacheSize: this.pipelineCache.size,
+              format: encoded.format,
+              ...(encoded.fallback !== undefined && requestedFormat !== undefined
+                ? { requestedFormat }
+                : {}),
+            },
+          };
+        } finally {
+          imported.texture.destroy();
+        }
+      }
+
       const imported = await imageToTexture(device, source, { format: textureFormat });
+      const inputDims: Dims = { width: imported.width, height: imported.height };
+      const stepDims = computeStepDims(inputDims, effectiveFilters);
+
+      const encoder = device.createCommandEncoder({ label: 'pixflow.pipeline' });
+      const ctx: ExecutionContext = {
+        device,
+        queue: device.queue,
+        encoder,
+        pipelineCache: this.pipelineCache,
+        texturePool: pool,
+        textureFormat,
+      };
+
+      // Track pool ownership so we can release exactly once per texture.
+      const owned = new Set<GPUTexture>();
+      let lastSrc: GPUTexture = imported.texture;
       try {
+        for (let i = 0; i < effectiveFilters.length; i++) {
+          const f = effectiveFilters[i];
+          if (!f) continue;
+          const inDims = stepDims[i];
+          const outDims = stepDims[i + 1];
+          if (!inDims || !outDims) continue;
+          await f.prepare(ctx, inDims, outDims);
+        }
+
+        let src: GPUTexture = imported.texture;
+        let prevOwned: GPUTexture | null = null;
+        for (let i = 0; i < effectiveFilters.length; i++) {
+          const f = effectiveFilters[i];
+          if (!f) continue;
+          const outDims = stepDims[i + 1];
+          if (!outDims) continue;
+          const dst = pool.acquire(outDims.width, outDims.height, textureFormat);
+          owned.add(dst);
+          f.execute(src, dst, ctx);
+          if (prevOwned) {
+            pool.release(prevOwned);
+            owned.delete(prevOwned);
+          }
+          prevOwned = dst;
+          src = dst;
+        }
+        lastSrc = src;
+
+        device.queue.submit([encoder.finish()]);
+
         const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
-        const encoded = await textureToBlob(device, imported.texture, readbackOptions);
+        const encoded = await textureToBlob(device, lastSrc, readbackOptions);
+
+        const finalDims = stepDims[stepDims.length - 1] ?? inputDims;
+        const poolStats = pool.stats;
         const durationMs = now() - start;
         const requestedFormat = readbackOptions.format;
+        const stats = {
+          durationMs,
+          filterCount: effectiveFilters.length,
+          inputWidth: inputDims.width,
+          inputHeight: inputDims.height,
+          outputWidth: finalDims.width,
+          outputHeight: finalDims.height,
+          poolReuses: poolStats.reuses,
+          poolAllocations: poolStats.allocations,
+          cacheSize: this.pipelineCache.size,
+          format: encoded.format,
+          ...(encoded.fallback !== undefined && requestedFormat !== undefined
+            ? { requestedFormat }
+            : {}),
+        };
         return {
           blob: encoded.blob,
-          width: imported.width,
-          height: imported.height,
-          stats: {
-            durationMs,
-            filterCount: 0,
-            inputWidth: imported.width,
-            inputHeight: imported.height,
-            outputWidth: imported.width,
-            outputHeight: imported.height,
-            poolReuses: pool.stats.reuses,
-            poolAllocations: pool.stats.allocations,
-            cacheSize: this.pipelineCache.size,
-            format: encoded.format,
-            ...(encoded.fallback !== undefined && requestedFormat !== undefined
-              ? { requestedFormat }
-              : {}),
-          },
+          width: finalDims.width,
+          height: finalDims.height,
+          stats,
         };
+      } catch (err) {
+        this.tracker?.assertAlive();
+        throw wrapPipelineError(err);
       } finally {
         imported.texture.destroy();
+        for (const tex of owned) pool.release(tex);
       }
-    }
-
-    const imported = await imageToTexture(device, source, { format: textureFormat });
-    const inputDims: Dims = { width: imported.width, height: imported.height };
-    const stepDims = computeStepDims(inputDims, effectiveFilters);
-
-    const encoder = device.createCommandEncoder({ label: 'pixflow.pipeline' });
-    const ctx: ExecutionContext = {
-      device,
-      queue: device.queue,
-      encoder,
-      pipelineCache: this.pipelineCache,
-      texturePool: pool,
-      textureFormat,
-    };
-
-    // Track textures we acquired from the pool so try/finally below can always
-    // return them — including on mid-pipeline errors.
-    const acquired: GPUTexture[] = [];
-    let lastSrc: GPUTexture = imported.texture;
-    try {
-      for (let i = 0; i < effectiveFilters.length; i++) {
-        const f = effectiveFilters[i];
-        if (!f) continue;
-        const inDims = stepDims[i];
-        const outDims = stepDims[i + 1];
-        if (!inDims || !outDims) continue;
-        await f.prepare(ctx, inDims, outDims);
-      }
-
-      let src: GPUTexture = imported.texture;
-      for (let i = 0; i < effectiveFilters.length; i++) {
-        const f = effectiveFilters[i];
-        if (!f) continue;
-        const outDims = stepDims[i + 1];
-        if (!outDims) continue;
-        const dst = pool.acquire(outDims.width, outDims.height, textureFormat);
-        acquired.push(dst);
-        f.execute(src, dst, ctx);
-        if (i > 0) {
-          const prev = acquired[i - 1];
-          if (prev) pool.release(prev);
-        }
-        src = dst;
-      }
-      lastSrc = src;
-
-      device.queue.submit([encoder.finish()]);
-
-      const readbackOptions = buildReadbackOptions(this.encodeOptions, options);
-      const encoded = await textureToBlob(device, lastSrc, readbackOptions);
-
-      const finalDims = stepDims[stepDims.length - 1] ?? inputDims;
-      const poolStats = pool.stats;
-      const durationMs = now() - start;
-      const requestedFormat = readbackOptions.format;
-      const stats = {
-        durationMs,
-        filterCount: effectiveFilters.length,
-        inputWidth: inputDims.width,
-        inputHeight: inputDims.height,
-        outputWidth: finalDims.width,
-        outputHeight: finalDims.height,
-        poolReuses: poolStats.reuses,
-        poolAllocations: poolStats.allocations,
-        cacheSize: this.pipelineCache.size,
-        format: encoded.format,
-        ...(encoded.fallback !== undefined && requestedFormat !== undefined
-          ? { requestedFormat }
-          : {}),
-      };
-      return {
-        blob: encoded.blob,
-        width: finalDims.width,
-        height: finalDims.height,
-        stats,
-      };
-    } catch (err) {
-      this.tracker?.assertAlive();
-      throw wrapPipelineError(err);
     } finally {
-      imported.texture.destroy();
-      // Release every texture we acquired from the pool. The "last" one we
-      // kept alive for readback is released here too; error paths would
-      // otherwise leak it.
-      for (const tex of acquired) pool.release(tex);
+      for (const isolated of isolatedFilters) {
+        if (isolated.disposable) isolated.filter.dispose?.();
+      }
     }
   }
 
@@ -768,3 +773,73 @@ function wrapPipelineError(err: unknown): unknown {
 // wants to invoke it independently of the pipeline. Re-export intentionally
 // unused from this file so tree-shaking drops it when unused.
 export { sourceToImageBitmap };
+
+interface IsolatedFilter {
+  readonly filter: Filter;
+  readonly disposable: boolean;
+}
+
+function isolateFiltersForRun(filters: readonly Filter[]): IsolatedFilter[] {
+  return filters.map((f) => {
+    const cloned = cloneFilterInstance(f);
+    if (cloned) return { filter: cloned, disposable: true };
+    return { filter: f, disposable: false };
+  });
+}
+
+function cloneFilterInstance(filter: Filter): Filter | null {
+  if (filter instanceof BrightnessFilter) {
+    return new BrightnessFilter({ ...filter.params });
+  }
+  if (filter instanceof ContrastFilter) {
+    return new ContrastFilter({ ...filter.params });
+  }
+  if (filter instanceof SaturationFilter) {
+    return new SaturationFilter({ ...filter.params });
+  }
+  if (filter instanceof ResizeFilter) {
+    return new ResizeFilter({ ...filter.params });
+  }
+  if (filter instanceof CropFilter) {
+    return new CropFilter({ ...filter.params });
+  }
+  if (filter instanceof Rotate90Filter) {
+    return new Rotate90Filter({ ...filter.params });
+  }
+  if (filter instanceof FlipFilter) {
+    return new FlipFilter({ ...filter.params });
+  }
+  if (filter instanceof PadFilter) {
+    const params: PadParams = filter.params.color
+      ? { ...filter.params, color: { ...filter.params.color } }
+      : { ...filter.params };
+    return new PadFilter(params);
+  }
+  if (filter instanceof GaussianBlurFilter) {
+    return new GaussianBlurFilter({ ...filter.params });
+  }
+  if (filter instanceof UnsharpMaskFilter) {
+    return new UnsharpMaskFilter({ ...filter.params });
+  }
+  if (filter instanceof CurvesFilter) {
+    return new CurvesFilter({
+      points: filter.params.points.map(([x, y]) => [x, y] as CurvePoint),
+    });
+  }
+  if (filter instanceof WhiteBalanceFilter) {
+    return new WhiteBalanceFilter({ ...filter.params });
+  }
+  if (filter instanceof ColorMatrixFilter) {
+    const params: ColorMatrixParams = filter.params.bias
+      ? {
+          matrix: [...filter.params.matrix],
+          bias: [...filter.params.bias] as [number, number, number, number],
+        }
+      : { matrix: [...filter.params.matrix] };
+    return new ColorMatrixFilter(params);
+  }
+  if (filter instanceof AutoOrientFilter) {
+    return new AutoOrientFilter();
+  }
+  return null;
+}
