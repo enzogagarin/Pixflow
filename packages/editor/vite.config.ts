@@ -31,4 +31,10 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['pixflow'],
   },
+  test: {
+    // Default to node env (fast, no DOM). Tests that need a DOM
+    // (React renderHook for hook tests) opt-in via the
+    // `// @vitest-environment jsdom` directive at the top of the file.
+    environment: 'node',
+  },
 });
