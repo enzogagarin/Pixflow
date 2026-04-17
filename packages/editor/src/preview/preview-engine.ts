@@ -58,7 +58,14 @@ export class PreviewEngine {
 
   private async renderFrame(state: EditState, signal: AbortSignal): Promise<void> {
     if (signal.aborted) return;
-    const pipeline = stateToPipeline(state, 'preview', this.factory);
+    // Coordinate-space bridge: the UI stores face-blur boxes (and, eventually,
+    // crop rectangles) in source-bitmap pixel coords, but the pipeline runs
+    // on the downsampled preview bitmap. Pass the ratio to stateToPipeline
+    // so it scales those coords to match the texture it'll operate on.
+    const coordScale =
+      this.opts.previewBitmap.width /
+      Math.max(1, state.source.naturalWidth);
+    const pipeline = stateToPipeline(state, 'preview', this.factory, { coordScale });
     try {
       await pipeline.run(this.opts.previewBitmap, {
         canvas: this.opts.canvas,

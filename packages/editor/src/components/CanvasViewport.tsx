@@ -4,6 +4,7 @@ import { useViewport } from '../viewport/use-viewport';
 import { usePreviewRender } from '../viewport/use-preview-render';
 import { CompareSlider } from './CompareSlider';
 import { ZoomControls } from './ZoomControls';
+import { FaceBoxOverlay } from './FaceBoxOverlay';
 
 /**
  * The main canvas viewport. Hosts two stacked canvases:
@@ -134,6 +135,12 @@ export function CanvasViewport() {
                 : { width: '100%', height: '100%' }
             }
           />
+          {previewBitmap && (
+            <FaceBoxOverlay
+              previewWidth={previewBitmap.width}
+              previewHeight={previewBitmap.height}
+            />
+          )}
         </div>
         {compare && <CompareSlider value={splitPct} onChange={setSplitPct} />}
       </div>
