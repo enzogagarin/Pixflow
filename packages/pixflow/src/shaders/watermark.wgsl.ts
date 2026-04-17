@@ -20,7 +20,12 @@ fn sampleWatermarkAt(local: vec2u) -> vec4f {
 
   let sx = min(u32(floor(f32(local.x) * f32(wmW) / f32(drawW))), wmW - 1u);
   let sy = min(u32(floor(f32(local.y) * f32(wmH) / f32(drawH))), wmH - 1u);
-  return textureLoad(watermarkTex, vec2i(sx, sy), 0);
+  // Explicit u32->i32 cast: WGSL has no implicit conversion between
+  // integer types, and Tint (Chrome's compiler) rejects vec2i(u32, u32)
+  // outright. Without this cast, the watermark shader fails to compile
+  // and the whole watermark filter throws "[Invalid ShaderModule
+  // pixflow.watermark.module]" at runtime.
+  return textureLoad(watermarkTex, vec2i(i32(sx), i32(sy)), 0);
 }
 
 fn compositeOver(src: vec4f, over: vec4f, opacity: f32) -> vec4f {

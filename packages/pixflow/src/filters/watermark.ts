@@ -228,11 +228,20 @@ export class WatermarkFilter implements Filter<ResolvedWatermarkParams> {
       );
     }
 
+    // copyExternalImageToTexture requires the destination to declare
+    // RENDER_ATTACHMENT in its usage (WebGPU spec, "GPUQueue.copyExternalImageToTexture":
+    // "destination.texture.usage must include RENDER_ATTACHMENT"). Without
+    // this flag, Tint emits "Destination texture needs to have CopyDst and
+    // RenderAttachment usage." for every render — the watermark texture
+    // exists in JS-land but pixflow can't actually upload pixels to it.
     this.watermarkTexture = ctx.device.createTexture({
       label: 'pixflow.watermark.texture',
       size: { width, height, depthOrArrayLayers: 1 },
       format: ctx.textureFormat,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     ctx.queue.copyExternalImageToTexture(

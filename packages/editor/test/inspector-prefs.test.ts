@@ -41,6 +41,22 @@ describe('loadPrefs', () => {
     expect(loadPrefs()).toEqual(custom);
   });
 
+  it('accepts detail and overlay as valid section ids', () => {
+    const custom: InspectorPrefs = {
+      openSections: ['geometry', 'color', 'detail', 'overlay'],
+    };
+    savePrefs(custom);
+    expect(loadPrefs()).toEqual(custom);
+  });
+
+  it('filters out unknown section ids while keeping known ones', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ openSections: ['geometry', 'unknown', 'detail'] }),
+    );
+    expect(loadPrefs()).toEqual({ openSections: ['geometry', 'detail'] });
+  });
+
   it('default has both Geometry and Color open', () => {
     expect(DEFAULT_PREFS.openSections).toEqual(['geometry', 'color']);
   });

@@ -4,7 +4,7 @@
  * remains in EditState. Stored in localStorage so the user's "I always
  * keep Color collapsed" preference survives reloads.
  */
-export type SectionId = 'geometry' | 'color';
+export type SectionId = 'geometry' | 'color' | 'detail' | 'overlay';
 
 export interface InspectorPrefs {
   readonly openSections: readonly SectionId[];
@@ -16,7 +16,12 @@ export const DEFAULT_PREFS: InspectorPrefs = {
   openSections: ['geometry', 'color'],
 };
 
-const VALID_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>(['geometry', 'color']);
+const VALID_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
+  'geometry',
+  'color',
+  'detail',
+  'overlay',
+]);
 
 /**
  * Load prefs from localStorage. Returns DEFAULT_PREFS on any failure
