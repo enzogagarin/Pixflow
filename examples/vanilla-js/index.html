@@ -83,6 +83,15 @@
           <button id="download-zip" class="ghost" disabled>Download ZIP</button>
           <button id="clear" class="ghost" disabled>Clear</button>
         </div>
+
+        <div class="button-row" style="margin-top: 8px;">
+          <button id="smoke-pixelate" type="button" class="ghost">Smoke: pixelate center</button>
+          <button id="smoke-region-blur" type="button" class="ghost">Smoke: blur center</button>
+          <span id="smoke-status" class="status small" style="margin-left: 8px;"></span>
+        </div>
+        <div id="smoke-result" class="smoke-result" hidden>
+          <img id="smoke-preview" alt="Smoke test preview" />
+        </div>
       </section>
 
       <section id="bench-panel" class="bench-panel" hidden>

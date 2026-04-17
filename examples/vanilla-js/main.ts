@@ -44,6 +44,12 @@ const progressFill = qs<HTMLDivElement>('#progress-fill');
 const progressLabel = qs<HTMLDivElement>('#progress-label');
 const resultsEl = qs<HTMLElement>('#results');
 const logEl = qs<HTMLElement>('#log');
+const smokePixelateBtn = qs<HTMLButtonElement>('#smoke-pixelate');
+const smokeRegionBlurBtn = qs<HTMLButtonElement>('#smoke-region-blur');
+const smokeStatusEl = qs<HTMLSpanElement>('#smoke-status');
+const smokeResultEl = qs<HTMLDivElement>('#smoke-result');
+const smokePreviewImg = qs<HTMLImageElement>('#smoke-preview');
+let smokePreviewUrl: string | null = null;
 
 interface Slot {
   readonly file: File;
@@ -185,6 +191,51 @@ function bindUi(): void {
   cancelBtn.addEventListener('click', () => abort?.abort());
   clearBtn.addEventListener('click', clearAll);
   zipBtn.addEventListener('click', () => void downloadZip());
+  smokePixelateBtn.addEventListener('click', () => void runSmoke('pixelate'));
+  smokeRegionBlurBtn.addEventListener('click', () => void runSmoke('regionBlur'));
+}
+
+async function runSmoke(kind: 'pixelate' | 'regionBlur'): Promise<void> {
+  const slot = slots.find((s) => s.status === 'pending') ?? slots[0];
+  if (!slot) {
+    smokeStatusEl.textContent = 'Drop an image first.';
+    return;
+  }
+  smokeStatusEl.textContent = `Running ${kind}…`;
+  smokePixelateBtn.disabled = true;
+  smokeRegionBlurBtn.disabled = true;
+  try {
+    const bitmap = await createImageBitmap(slot.file);
+    const region = {
+      x: Math.round(bitmap.width * 0.3),
+      y: Math.round(bitmap.height * 0.3),
+      w: Math.round(bitmap.width * 0.4),
+      h: Math.round(bitmap.height * 0.4),
+    };
+    const p = Pipeline.create();
+    if (kind === 'pixelate') {
+      p.pixelate({ regions: [region], blockSize: 24 });
+    } else {
+      p.regionBlur({ regions: [region], sigma: 12 });
+    }
+    p.encode({ format: 'image/png', quality: 1 });
+    const result = await p.run(bitmap);
+    bitmap.close();
+
+    if (smokePreviewUrl) URL.revokeObjectURL(smokePreviewUrl);
+    smokePreviewUrl = URL.createObjectURL(result.blob);
+    smokePreviewImg.src = smokePreviewUrl;
+    smokeResultEl.hidden = false;
+    smokeStatusEl.textContent = `${kind} done · ${result.stats.durationMs.toFixed(1)} ms`;
+    log(`Smoke ${kind} · ${slot.file.name} · ${result.stats.durationMs.toFixed(1)} ms`);
+  } catch (err) {
+    const msg = err instanceof PixflowError ? `[${err.code}] ${err.message}` : String(err);
+    smokeStatusEl.textContent = `Error: ${msg}`;
+    log(`Smoke ${kind} failed: ${msg}`);
+  } finally {
+    smokePixelateBtn.disabled = false;
+    smokeRegionBlurBtn.disabled = false;
+  }
 }
 
 function addFiles(files: File[]): void {
