@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import { useEditStore } from '../../state/store';
 import { useInspectorPrefs } from '../../hooks/useInspectorPrefs';
 import type { SectionId } from '../../state/inspector-prefs';
+import { freshState, isFreshEditState } from '../../state/defaults';
 import { GeometrySection } from './GeometrySection';
 import { ColorSection } from './ColorSection';
 
@@ -30,12 +31,32 @@ export function Inspector() {
     [prefs.openSections, toggleSection],
   );
 
+  const onReset = useCallback(() => {
+    const store = useEditStore.getState();
+    if (!store.document) return;
+    const { source } = store.document.present;
+    store.commit(
+      freshState(source.file, source.bitmap, source.exif, source.naturalWidth, source.naturalHeight),
+    );
+  }, []);
+
   if (!document) return null;
+  const canReset = !isFreshEditState(document.present);
 
   return (
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elev)]">
-      <header className="border-b border-[var(--color-border)] px-3 py-2 font-[var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--color-muted)]">
-        Inspector
+      <header className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2 font-[var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--color-muted)]">
+        <span>Inspector</span>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!canReset}
+          aria-label="Reset all edits to the original image"
+          title={canReset ? 'Reset all edits (⌘Z to undo)' : 'No edits to reset'}
+          className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-[var(--color-border)] disabled:hover:text-[var(--color-muted)]"
+        >
+          Reset
+        </button>
       </header>
       <Accordion.Root
         type="multiple"
