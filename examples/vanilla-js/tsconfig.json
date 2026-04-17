@@ -11,7 +11,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "pixflow": ["../../src/index.ts"]
+      "pixflow": ["../../packages/pixflow/src/index.ts"]
     }
   },
   "include": ["./*.ts"]
