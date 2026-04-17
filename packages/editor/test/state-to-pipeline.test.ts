@@ -230,6 +230,152 @@ describe('stateToPipeline — watermark', () => {
   });
 });
 
+describe('stateToPipeline — face-blur', () => {
+  const BOX = { x: 100, y: 200, w: 300, h: 400, confidence: 0.9 } as const;
+
+  it('skips both pixelate and regionBlur when faceBlur is null', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(makeState(), 'export', asPipelineFactory(mock));
+    expect(mock.pixelate).not.toHaveBeenCalled();
+    expect(mock.regionBlur).not.toHaveBeenCalled();
+  });
+
+  it('skips when boxes array is empty', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [], style: 'pixelate', strength: 0.5 } }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.pixelate).not.toHaveBeenCalled();
+    expect(mock.regionBlur).not.toHaveBeenCalled();
+  });
+
+  it('skips when strength is zero', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0 } }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.pixelate).not.toHaveBeenCalled();
+    expect(mock.regionBlur).not.toHaveBeenCalled();
+  });
+
+  it('emits pixelate with boxes and blockSize = round(32 * strength), clamped to [2, 256]', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0.7 } }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.pixelate).toHaveBeenCalledTimes(1);
+    const arg = mock.pixelate.mock.calls[0]?.[0] as { regions: unknown[]; blockSize: number };
+    expect(arg.regions).toHaveLength(1);
+    expect(arg.blockSize).toBe(22); // round(32 * 0.7) = 22
+    expect(mock.regionBlur).not.toHaveBeenCalled();
+  });
+
+  it('emits regionBlur with sigma = 20 * strength, clamped to [0.5, 32]', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'gaussian', strength: 0.5 } }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    expect(mock.regionBlur).toHaveBeenCalledTimes(1);
+    const arg = mock.regionBlur.mock.calls[0]?.[0] as { regions: unknown[]; sigma: number };
+    expect(arg.sigma).toBe(10); // 20 * 0.5
+    expect(mock.pixelate).not.toHaveBeenCalled();
+  });
+
+  it('clamps pixelate blockSize when strength would otherwise yield <2', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0.01 } }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    const arg = mock.pixelate.mock.calls[0]?.[0] as { blockSize: number };
+    // round(32 * 0.01) = 0 → clamp to 2
+    expect(arg.blockSize).toBe(2);
+  });
+
+  it('remaps boxes into post-crop space when a crop is active', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({
+        geometry: {
+          crop: { x: 50, y: 75, w: 1000, h: 800 },
+          rotate: 0,
+          flip: { h: false, v: false },
+        },
+        faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0.5 },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    const arg = mock.pixelate.mock.calls[0]?.[0] as {
+      regions: readonly { x: number; y: number; w: number; h: number }[];
+    };
+    expect(arg.regions[0]).toEqual({ x: 50, y: 125, w: 300, h: 400, confidence: 0.9 });
+  });
+
+  it('scales pixelate regions + blockSize by coordScale (preview path bridge)', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0.5 } }),
+      'preview',
+      asPipelineFactory(mock),
+      { coordScale: 0.25 },
+    );
+    const arg = mock.pixelate.mock.calls[0]?.[0] as {
+      regions: readonly { x: number; y: number; w: number; h: number }[];
+      blockSize: number;
+    };
+    // BOX = {x: 100, y: 200, w: 300, h: 400}; scaled × 0.25 → {25, 50, 75, 100}
+    expect(arg.regions[0]).toMatchObject({ x: 25, y: 50, w: 75, h: 100 });
+    // base blockSize = round(32 * 0.5) = 16; scaled × 0.25 → 4
+    expect(arg.blockSize).toBe(4);
+  });
+
+  it('scales regionBlur regions + sigma by coordScale', () => {
+    const mock = createMockPipeline();
+    stateToPipeline(
+      makeState({ faceBlur: { boxes: [BOX], style: 'gaussian', strength: 0.5 } }),
+      'preview',
+      asPipelineFactory(mock),
+      { coordScale: 0.5 },
+    );
+    const arg = mock.regionBlur.mock.calls[0]?.[0] as {
+      regions: readonly { x: number; y: number; w: number; h: number }[];
+      sigma: number;
+    };
+    expect(arg.regions[0]).toMatchObject({ x: 50, y: 100, w: 150, h: 200 });
+    // base sigma = 20 * 0.5 = 10; scaled × 0.5 → 5
+    expect(arg.sigma).toBe(5);
+  });
+
+  it('runs after detail and before watermark (filter ordering)', () => {
+    const mock = createMockPipeline();
+    const wmImage = {} as unknown as ImageBitmap;
+    stateToPipeline(
+      makeState({
+        detail: { sharpen: { amount: 0.3, radius: 1 }, blur: null },
+        faceBlur: { boxes: [BOX], style: 'pixelate', strength: 0.5 },
+        watermark: { image: wmImage, position: 'bottom-right', opacity: 0.3, scale: 0.15 },
+      }),
+      'export',
+      asPipelineFactory(mock),
+    );
+    const sharpenAt = mock.unsharpMask.mock.invocationCallOrder[0]!;
+    const pixelateAt = mock.pixelate.mock.invocationCallOrder[0]!;
+    const watermarkAt = mock.watermark.mock.invocationCallOrder[0]!;
+    expect(sharpenAt).toBeLessThan(pixelateAt);
+    expect(pixelateAt).toBeLessThan(watermarkAt);
+  });
+});
+
 describe('stateToPipeline — output + modes', () => {
   it('skips resize when null', () => {
     const mock = createMockPipeline();

@@ -19,6 +19,8 @@ export function createMockPipeline(): MockPipeline {
     unsharpMask: vi.fn(() => mock),
     gaussianBlur: vi.fn(() => mock),
     watermark: vi.fn(() => mock),
+    pixelate: vi.fn(() => mock),
+    regionBlur: vi.fn(() => mock),
     resize: vi.fn(() => mock),
     encode: vi.fn(() => mock),
   };
@@ -36,6 +38,8 @@ export interface MockPipeline {
   unsharpMask: ReturnType<typeof vi.fn>;
   gaussianBlur: ReturnType<typeof vi.fn>;
   watermark: ReturnType<typeof vi.fn>;
+  pixelate: ReturnType<typeof vi.fn>;
+  regionBlur: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
   encode: ReturnType<typeof vi.fn>;
 }
