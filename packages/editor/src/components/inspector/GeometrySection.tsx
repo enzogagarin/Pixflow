@@ -2,6 +2,7 @@ import { produce } from 'immer';
 import { useCallback } from 'react';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { useEditStore } from '../../state/store';
+import { useT } from '../../i18n/useT';
 import { Segmented } from './Segmented';
 
 const ROTATE_OPTIONS = [
@@ -21,6 +22,7 @@ const ROTATE_OPTIONS = [
  * discrete clicks, not continuous gestures).
  */
 export function GeometrySection() {
+  const t = useT();
   const document = useEditStore((s) => s.document);
 
   const onRotateChange = useCallback((next: string) => {
@@ -57,37 +59,37 @@ export function GeometrySection() {
     <div className="flex flex-col gap-3 p-3">
       <div className="flex items-center justify-between">
         <span className="font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-          Rotate
+          {t('geometry.rotate')}
         </span>
         <Segmented
           value={String(geometry.rotate)}
           options={ROTATE_OPTIONS}
           onChange={onRotateChange}
-          ariaLabel="Rotation in degrees"
+          ariaLabel={t('geometry.rotate')}
         />
       </div>
 
       <div className="flex items-center justify-between">
         <span className="font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-          Flip
+          {t('geometry.flip.horizontal').replace(/ .*/, '')}
         </span>
         <ToggleGroup.Root
           type="multiple"
           value={flipValue}
           onValueChange={onFlipChange}
-          aria-label="Flip axes"
+          aria-label={t('geometry.flip.horizontal')}
           className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] font-[var(--font-mono)] text-xs"
         >
           <ToggleGroup.Item
             value="h"
-            aria-label="Flip horizontal"
+            aria-label={t('geometry.flip.horizontal')}
             className="px-2.5 py-1 text-[var(--color-muted)] hover:text-[var(--color-fg)] data-[state=on]:bg-[var(--color-accent-dim)] data-[state=on]:text-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
           >
             ⇆
           </ToggleGroup.Item>
           <ToggleGroup.Item
             value="v"
-            aria-label="Flip vertical"
+            aria-label={t('geometry.flip.vertical')}
             className="px-2.5 py-1 text-[var(--color-muted)] hover:text-[var(--color-fg)] data-[state=on]:bg-[var(--color-accent-dim)] data-[state=on]:text-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
           >
             ⇅
@@ -97,13 +99,13 @@ export function GeometrySection() {
 
       <div className="flex items-center justify-between">
         <span className="font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-          Crop
+          {t('geometry.crop')}
         </span>
         <span
           className="rounded-md border border-dashed border-[var(--color-border)] bg-transparent px-2 py-[2px] font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]"
-          title="Interactive crop tool coming in a later release"
+          title={t('geometry.crop.soonTooltip')}
         >
-          Soon
+          {t('geometry.crop.soon')}
         </span>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { produce } from 'immer';
 import { useCallback } from 'react';
 import { useEditStore } from '../../state/store';
+import { useT } from '../../i18n/useT';
 import type { EditState } from '../../state/types';
 import { InspectorSlider } from './InspectorSlider';
 
@@ -16,6 +17,7 @@ import { InspectorSlider } from './InspectorSlider';
  * row don't trigger redundant renders.
  */
 export function ColorSection() {
+  const t = useT();
   const document = useEditStore((s) => s.document);
 
   const setBrightness = useCallback(
@@ -60,7 +62,7 @@ export function ColorSection() {
   return (
     <div className="flex flex-col gap-4 p-3">
       <InspectorSlider
-        label="Brightness"
+        label={t('color.brightness')}
         value={color.brightness}
         min={-1}
         max={1}
@@ -70,7 +72,7 @@ export function ColorSection() {
         getNextState={setBrightness}
       />
       <InspectorSlider
-        label="Contrast"
+        label={t('color.contrast')}
         value={color.contrast}
         min={-1}
         max={1}
@@ -80,7 +82,7 @@ export function ColorSection() {
         getNextState={setContrast}
       />
       <InspectorSlider
-        label="Saturation"
+        label={t('color.saturation')}
         value={color.saturation}
         min={-1}
         max={1}
@@ -92,10 +94,10 @@ export function ColorSection() {
 
       <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
         <span className="font-[var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--color-muted)]">
-          White balance
+          {t('color.whiteBalance')}
         </span>
         <InspectorSlider
-          label="Temp"
+          label={t('color.temp')}
           value={color.whiteBalance.temperature}
           min={-1}
           max={1}
@@ -105,7 +107,7 @@ export function ColorSection() {
           getNextState={setTemperature}
         />
         <InspectorSlider
-          label="Tint"
+          label={t('color.tint')}
           value={color.whiteBalance.tint}
           min={-1}
           max={1}

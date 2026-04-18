@@ -3,10 +3,14 @@ import { DevStatePanel } from './components/DevStatePanel';
 import { DropZone } from './components/DropZone';
 import { HistoryIndicator } from './components/HistoryIndicator';
 import { Inspector } from './components/inspector/Inspector';
+import { LanguageToggle } from './components/LanguageToggle';
+import { NewImageButton } from './components/NewImageButton';
+import { HelpOverlay } from './components/HelpOverlay';
 import { WebGPUStatus } from './components/WebGPUStatus';
 import { EditorContextProvider } from './context/EditorContextProvider';
 import { useUndoRedoShortcuts } from './hooks/useUndoRedoShortcuts';
 import { useEditStore } from './state/store';
+import { useT } from './i18n/useT';
 import pixflowPkg from 'pixflow/package.json';
 
 export function App() {
@@ -20,6 +24,7 @@ export function App() {
 function AppShell() {
   useUndoRedoShortcuts();
   const document = useEditStore((s) => s.document);
+  const t = useT();
 
   return (
     <main className="flex min-h-screen flex-col gap-4 px-6 py-4">
@@ -29,13 +34,15 @@ function AppShell() {
             ▤
           </span>
           <h1 className="font-[var(--font-mono)] text-xl font-bold tracking-tight">
-            Pixflow Editor
+            {t('app.title')}
           </h1>
           <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-[2px] font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-            pre-alpha
+            {t('app.preAlpha')}
           </span>
+          {document && <NewImageButton />}
         </div>
         <div className="flex items-center gap-3">
+          <LanguageToggle />
           <WebGPUStatus />
           <HistoryIndicator />
         </div>
@@ -56,9 +63,11 @@ function AppShell() {
       )}
 
       <footer className="flex items-center justify-between font-[var(--font-mono)] text-[11px] text-[var(--color-muted)]">
-        <span>imported pixflow v{pixflowPkg.version}</span>
-        <span>Drop image · ⌘Z undo · ⇧⌘Z redo · Space pan · / compare · +/− zoom · 2× click slider = reset</span>
+        <span>{t('app.importedPixflow', { version: pixflowPkg.version })}</span>
+        <span>{t('app.footer.shortcuts')}</span>
       </footer>
+
+      <HelpOverlay />
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import { produce } from 'immer';
 import { useCallback } from 'react';
 import { useEditStore } from '../../state/store';
+import { useT } from '../../i18n/useT';
 import type { EditState } from '../../state/types';
 import { InspectorSlider } from './InspectorSlider';
 
@@ -25,6 +26,7 @@ const DEFAULT_BLUR = { sigma: 2 };
  * inconsistent with the still-checked enable box).
  */
 export function DetailSection() {
+  const t = useT();
   const document = useEditStore((s) => s.document);
 
   const toggleSharpen = useCallback((enabled: boolean) => {
@@ -82,12 +84,12 @@ export function DetailSection() {
             onChange={(e) => toggleSharpen(e.target.checked)}
             className="accent-[var(--color-accent)]"
           />
-          <span>Sharpen</span>
+          <span>{t('detail.sharpen')}</span>
         </label>
         {sharpen && (
           <div className="flex flex-col gap-3 pl-1">
             <InspectorSlider
-              label="Amount"
+              label={t('detail.sharpen.amount')}
               value={sharpen.amount}
               min={0}
               max={2}
@@ -97,7 +99,7 @@ export function DetailSection() {
               getNextState={setSharpenAmount}
             />
             <InspectorSlider
-              label="Radius"
+              label={t('detail.sharpen.radius')}
               value={sharpen.radius}
               min={0.5}
               max={3}
@@ -118,12 +120,12 @@ export function DetailSection() {
             onChange={(e) => toggleBlur(e.target.checked)}
             className="accent-[var(--color-accent)]"
           />
-          <span>Blur</span>
+          <span>{t('detail.blur')}</span>
         </label>
         {blur && (
           <div className="flex flex-col gap-3 pl-1">
             <InspectorSlider
-              label="Sigma"
+              label={t('detail.blur.sigma')}
               value={blur.sigma}
               min={0.5}
               max={20}
