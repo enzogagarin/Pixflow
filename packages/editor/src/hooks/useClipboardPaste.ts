@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useEditStore } from '../state/store';
+import { useBatchQueue } from '../state/batch-queue';
 
 /**
  * Global listener for Cmd+V / Ctrl+V image paste. Triggers when the
@@ -13,6 +14,7 @@ import { useEditStore } from '../state/store';
  */
 export function useClipboardPaste(onToast?: (kind: 'pasted' | 'notImage') => void): void {
   const loadImage = useEditStore((s) => s.loadImage);
+  const clearBatchQueue = useBatchQueue((s) => s.clear);
 
   useEffect(() => {
     function isTyping(target: EventTarget | null): boolean {
@@ -32,6 +34,7 @@ export function useClipboardPaste(onToast?: (kind: 'pasted' | 'notImage') => voi
           try {
             e.preventDefault();
             const bitmap = await createImageBitmap(file);
+            clearBatchQueue();
             loadImage(file, bitmap, {}, bitmap.width, bitmap.height);
             onToast?.('pasted');
           } catch {
@@ -50,5 +53,5 @@ export function useClipboardPaste(onToast?: (kind: 'pasted' | 'notImage') => voi
     };
     window.addEventListener('paste', handler);
     return () => window.removeEventListener('paste', handler);
-  }, [loadImage, onToast]);
+  }, [clearBatchQueue, loadImage, onToast]);
 }

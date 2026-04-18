@@ -64,6 +64,14 @@ interface Slot {
   outputUrl?: string;
 }
 
+interface GPUAdapterWithInfo extends GPUAdapter {
+  requestAdapterInfo?: () => Promise<{
+    vendor?: string;
+    architecture?: string;
+    description?: string;
+  }>;
+}
+
 let slots: Slot[] = [];
 let abort: AbortController | null = null;
 let activePreset: PresetName = 'forum-post';
@@ -104,7 +112,7 @@ async function boot(): Promise<void> {
   // their hardware. Adapter info is best-effort — older browsers omit it.
   try {
     const acquired = await acquireDevice();
-    const info = await acquired.adapter.requestAdapterInfo?.();
+    const info = await (acquired.adapter as GPUAdapterWithInfo).requestAdapterInfo?.();
     if (info?.vendor || info?.architecture) {
       const desc = [info.vendor, info.architecture, info.description]
         .filter(Boolean)
@@ -747,27 +755,29 @@ function setupCompareSlider(card: HTMLDivElement): void {
   const wrapper = card.querySelector<HTMLDivElement>('.output-canvas-wrapper');
   const handle = card.querySelector<HTMLDivElement>('.slider-handle');
   if (!compare || !wrapper || !handle) return;
+  const compareEl = compare;
+  const handleEl = handle;
 
   let dragging = false;
 
   function setSplit(pctRaw: number): void {
     const pct = Math.min(100, Math.max(0, pctRaw));
-    compare.style.setProperty('--split', `${pct.toString()}%`);
-    if (handle) handle.style.left = `${pct.toString()}%`;
+    compareEl.style.setProperty('--split', `${pct.toString()}%`);
+    handleEl.style.left = `${pct.toString()}%`;
   }
 
   function onPointer(e: PointerEvent): void {
-    if (!dragging || !compare) return;
-    const rect = compare.getBoundingClientRect();
+    if (!dragging) return;
+    const rect = compareEl.getBoundingClientRect();
     const pct = ((e.clientX - rect.left) / rect.width) * 100;
     setSplit(pct);
   }
 
-  handle.addEventListener('pointerdown', (e) => {
+  handleEl.addEventListener('pointerdown', (e) => {
     dragging = true;
-    handle.setPointerCapture(e.pointerId);
+    handleEl.setPointerCapture(e.pointerId);
   });
-  handle.addEventListener('pointermove', onPointer);
+  handleEl.addEventListener('pointermove', onPointer);
   handle.addEventListener('pointerup', (e) => {
     dragging = false;
     handle.releasePointerCapture(e.pointerId);

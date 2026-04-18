@@ -5,6 +5,7 @@ import { HistoryIndicator } from './components/HistoryIndicator';
 import { Inspector } from './components/inspector/Inspector';
 import { LanguageToggle } from './components/LanguageToggle';
 import { NewImageButton } from './components/NewImageButton';
+import { BatchIndicator } from './components/BatchIndicator';
 import { HelpOverlay } from './components/HelpOverlay';
 import { WebGPUStatus } from './components/WebGPUStatus';
 import { Toast } from './components/Toast';
@@ -54,6 +55,7 @@ function AppShell() {
             {t('app.preAlpha')}
           </span>
           {document && <NewImageButton />}
+          <BatchIndicator />
         </div>
         <div className="flex items-center gap-3">
           <LanguageToggle />

@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import { produce } from 'immer';
 import { useEditStore } from '../../state/store';
+import { useBatchQueue } from '../../state/batch-queue';
 import { useT } from '../../i18n/useT';
 import type { EditState } from '../../state/types';
 import { useEditorContext } from '../../context/EditorContextProvider';
 import { downloadExport, exportDocument, type StripReport } from '../../services/export-document';
+import { batchExport, downloadBatch } from '../../services/batch-export';
 import { InspectorSlider } from './InspectorSlider';
 import { Segmented } from './Segmented';
 
@@ -34,6 +36,7 @@ export function ExportSection() {
   );
   const commit = useEditStore((s) => s.commit);
   const ctx = useEditorContext();
+  const batchFiles = useBatchQueue((s) => s.files);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -130,6 +133,47 @@ export function ExportSection() {
     }
   }, [ctx, busy, t]);
 
+  const onBatchExport = useCallback(async () => {
+    const doc = useEditStore.getState().document;
+    if (!doc || busy || batchFiles.length === 0) return;
+    setBusy(true);
+    setStatus(t('batch.exporting', { done: 0, total: batchFiles.length, name: '…' }));
+    try {
+      const result = await batchExport(
+        doc.present,
+        batchFiles,
+        ctx,
+        (p) =>
+          setStatus(
+            t('batch.exporting', { done: p.done, total: p.total, name: p.currentFile }),
+          ),
+      );
+      downloadBatch(result);
+      if (result.errors.length > 0) {
+        setStatus(
+          t('batch.donePartial', {
+            count: result.count,
+            total: batchFiles.length,
+            errors: result.errors.length,
+            ms: result.durationMs.toFixed(0),
+          }),
+        );
+      } else {
+        setStatus(
+          t('batch.done', {
+            count: result.count,
+            mb: (result.zip.size / (1024 * 1024)).toFixed(1),
+            ms: result.durationMs.toFixed(0),
+          }),
+        );
+      }
+    } catch (err) {
+      setStatus(t('export.error', { message: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setBusy(false);
+    }
+  }, [ctx, busy, batchFiles, t]);
+
   if (!document) return null;
   const faceBoxCount = document.present.faceBlur?.boxes.length ?? 0;
   const { format, quality, resize } = document.present.output;
@@ -195,6 +239,17 @@ export function ExportSection() {
       >
         {busy ? t('export.busy') : t('export.button')}
       </button>
+
+      {batchFiles.length >= 2 && (
+        <button
+          type="button"
+          onClick={() => void onBatchExport()}
+          disabled={busy}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-[var(--font-mono)] text-xs text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:cursor-wait disabled:opacity-60"
+        >
+          {t('batch.exportAll', { count: batchFiles.length })}
+        </button>
+      )}
 
       {status && (
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">{status}</p>

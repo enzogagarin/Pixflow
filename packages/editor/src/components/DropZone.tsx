@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { useEditStore } from '../state/store';
+import { useBatchQueue } from '../state/batch-queue';
 import { useT } from '../i18n/useT';
 
 /**
@@ -18,26 +19,35 @@ import { useT } from '../i18n/useT';
 export function DropZone() {
   const t = useT();
   const loadImage = useEditStore((s) => s.loadImage);
+  const setBatchQueue = useBatchQueue((s) => s.set);
+  const clearBatchQueue = useBatchQueue((s) => s.clear);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [active, setActive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function handleFiles(files: FileList | null): Promise<void> {
     setMessage(null);
-    const file = files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setMessage(`"${file.name}" is not an image file.`);
-      return;
-    }
+    const all = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    const first = all[0];
+    if (!first) return;
     try {
-      const bitmap = await createImageBitmap(file);
-      loadImage(file, bitmap, {}, bitmap.width, bitmap.height);
+      const bitmap = await createImageBitmap(first);
+      loadImage(first, bitmap, {}, bitmap.width, bitmap.height);
+      if (all.length > 1) {
+        // Multi-drop: the first becomes the active image, the rest sit in
+        // the batch queue waiting for "Export all". Drop a new single file
+        // later → queue clears (handled below on single-file paths).
+        setBatchQueue(all, 0);
+      } else {
+        clearBatchQueue();
+      }
       setMessage(
-        `Loaded: ${file.name} · ${bitmap.width.toString()}×${bitmap.height.toString()}`,
+        `Loaded: ${first.name} · ${bitmap.width.toString()}×${bitmap.height.toString()}${
+          all.length > 1 ? ` · +${String(all.length - 1)} queued` : ''
+        }`,
       );
     } catch (err) {
-      setMessage(`Failed to decode ${file.name}: ${String(err)}`);
+      setMessage(`Failed to decode ${first.name}: ${String(err)}`);
     }
   }
 
@@ -100,6 +110,7 @@ export function DropZone() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple
         onChange={onInputChange}
         className="hidden"
         aria-hidden="true"

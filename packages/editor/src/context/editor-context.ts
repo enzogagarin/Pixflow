@@ -35,17 +35,17 @@ export function createEditorContext(opts: CreateOptions = {}): EditorContext {
   return {
     ensure() {
       if (disposed) return Promise.reject(new Error('EditorContext disposed'));
-      if (!acquisition) {
-        acquisition = acquire().then((acq) => {
+      const pending =
+        acquisition ??
+        (acquisition = acquire().then((acq: AcquiredDevice) => {
           if (disposed) {
             acq.device.destroy();
             throw new Error('EditorContext disposed');
           }
           device = acq.device;
           return { device: acq.device };
-        });
-      }
-      return acquisition;
+        }));
+      return pending;
     },
     current() {
       return device ? { device } : null;

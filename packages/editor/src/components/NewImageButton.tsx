@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ChangeEvent } from 'react';
 import { useEditStore } from '../state/store';
+import { useBatchQueue } from '../state/batch-queue';
 import { useT } from '../i18n/useT';
 
 /**
@@ -12,6 +13,8 @@ import { useT } from '../i18n/useT';
 export function NewImageButton() {
   const t = useT();
   const loadImage = useEditStore((s) => s.loadImage);
+  const setBatchQueue = useBatchQueue((s) => s.set);
+  const clearBatchQueue = useBatchQueue((s) => s.clear);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onClick = useCallback(() => {
@@ -20,19 +23,22 @@ export function NewImageButton() {
 
   const onChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      // Reset value so picking the same filename twice in a row still fires.
+      const all = Array.from(e.target.files ?? []).filter((f) =>
+        f.type.startsWith('image/'),
+      );
       e.target.value = '';
-      if (!file || !file.type.startsWith('image/')) return;
+      const first = all[0];
+      if (!first) return;
       try {
-        const bitmap = await createImageBitmap(file);
-        loadImage(file, bitmap, {}, bitmap.width, bitmap.height);
+        const bitmap = await createImageBitmap(first);
+        loadImage(first, bitmap, {}, bitmap.width, bitmap.height);
+        if (all.length > 1) setBatchQueue(all, 0);
+        else clearBatchQueue();
       } catch {
-        // Silently ignore decode failures here; user can retry.
-        // Full error UX lives in DropZone for the empty state.
+        /* silently ignore decode failure */
       }
     },
-    [loadImage],
+    [loadImage, setBatchQueue, clearBatchQueue],
   );
 
   return (
@@ -48,6 +54,7 @@ export function NewImageButton() {
         ref={inputRef}
         type="file"
         accept="image/*"
+        multiple
         onChange={(e) => void onChange(e)}
         className="hidden"
         aria-hidden="true"

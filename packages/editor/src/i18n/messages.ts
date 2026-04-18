@@ -152,7 +152,14 @@ export type MessageKey =
   // Clipboard + unsaved
   | 'clipboard.pasted'
   | 'clipboard.notImage'
-  | 'unsaved.warnTitle';
+  | 'unsaved.warnTitle'
+  // Batch mode
+  | 'batch.queued'
+  | 'batch.queuedPlural'
+  | 'batch.exportAll'
+  | 'batch.exporting'
+  | 'batch.done'
+  | 'batch.donePartial';
 
 export type Messages = Record<MessageKey, string>;
 
@@ -301,6 +308,15 @@ export const MESSAGES: Record<Locale, Messages> = {
     'clipboard.notImage': 'Panoda görsel yok',
     'unsaved.warnTitle':
       'Kaydedilmemiş değişiklikler var. Sayfadan ayrılmak istediğinden emin misin?',
+
+    'batch.queued': '{count} görsel kuyrukta',
+    'batch.queuedPlural': '{count} görsel kuyrukta',
+    'batch.exportAll': '↓ Hepsini dışa aktar ({count})',
+    'batch.exporting': 'İşleniyor: {done}/{total} · {name}',
+    'batch.done':
+      'ZIP kaydedildi · {count} görsel · {mb} MB · {ms} ms',
+    'batch.donePartial':
+      'ZIP kaydedildi · {count}/{total} başarılı ({errors} hata) · {ms} ms',
   },
   en: {
     'app.title': 'Pixflow Editor',
@@ -444,5 +460,14 @@ export const MESSAGES: Record<Locale, Messages> = {
     'clipboard.notImage': 'No image on clipboard',
     'unsaved.warnTitle':
       'You have unsaved changes. Are you sure you want to leave?',
+
+    'batch.queued': '{count} image queued',
+    'batch.queuedPlural': '{count} images queued',
+    'batch.exportAll': '↓ Export all ({count})',
+    'batch.exporting': 'Processing: {done}/{total} · {name}',
+    'batch.done':
+      'ZIP saved · {count} images · {mb} MB · {ms} ms',
+    'batch.donePartial':
+      'ZIP saved · {count}/{total} succeeded ({errors} errors) · {ms} ms',
   },
 };
