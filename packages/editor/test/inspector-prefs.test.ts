@@ -57,8 +57,8 @@ describe('loadPrefs', () => {
     expect(loadPrefs()).toEqual({ openSections: ['geometry', 'detail'] });
   });
 
-  it('default has both Geometry and Color open', () => {
-    expect(DEFAULT_PREFS.openSections).toEqual(['geometry', 'color']);
+  it('default has Geometry, Color, and Export open', () => {
+    expect(DEFAULT_PREFS.openSections).toEqual(['geometry', 'color', 'export']);
   });
 });
 

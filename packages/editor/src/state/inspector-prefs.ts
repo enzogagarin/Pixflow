@@ -4,7 +4,7 @@
  * remains in EditState. Stored in localStorage so the user's "I always
  * keep Color collapsed" preference survives reloads.
  */
-export type SectionId = 'geometry' | 'color' | 'detail' | 'overlay';
+export type SectionId = 'geometry' | 'color' | 'detail' | 'overlay' | 'export';
 
 export interface InspectorPrefs {
   readonly openSections: readonly SectionId[];
@@ -13,7 +13,7 @@ export interface InspectorPrefs {
 export const STORAGE_KEY = 'pixflow.editor.inspectorPrefs.v1';
 
 export const DEFAULT_PREFS: InspectorPrefs = {
-  openSections: ['geometry', 'color'],
+  openSections: ['geometry', 'color', 'export'],
 };
 
 const VALID_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
@@ -21,6 +21,7 @@ const VALID_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
   'color',
   'detail',
   'overlay',
+  'export',
 ]);
 
 /**

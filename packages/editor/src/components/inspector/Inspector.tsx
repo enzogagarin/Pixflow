@@ -8,6 +8,7 @@ import { GeometrySection } from './GeometrySection';
 import { ColorSection } from './ColorSection';
 import { DetailSection } from './DetailSection';
 import { OverlaySection } from './OverlaySection';
+import { ExportSection } from './ExportSection';
 
 /**
  * Right-rail inspector. Renders nothing until a document is loaded
@@ -111,6 +112,18 @@ export function Inspector() {
           </Accordion.Header>
           <Accordion.Content>
             <OverlaySection />
+          </Accordion.Content>
+        </Accordion.Item>
+
+        <Accordion.Item value="export" className="border-t border-[var(--color-border)]">
+          <Accordion.Header>
+            <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
+              <span>Export</span>
+              <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
+            </Accordion.Trigger>
+          </Accordion.Header>
+          <Accordion.Content>
+            <ExportSection />
           </Accordion.Content>
         </Accordion.Item>
       </Accordion.Root>

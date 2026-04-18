@@ -32,7 +32,7 @@ function AppShell() {
             Pixflow Editor
           </h1>
           <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-[2px] font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-            pre-alpha · PR #6
+            pre-alpha
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -45,7 +45,7 @@ function AppShell() {
         <div className="flex flex-1 gap-4">
           <div className="flex flex-1 flex-col gap-4">
             <CanvasViewport />
-            <DevStatePanel />
+            {import.meta.env.DEV && <DevStatePanel />}
           </div>
           <Inspector />
         </div>
