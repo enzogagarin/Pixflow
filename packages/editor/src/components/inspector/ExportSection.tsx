@@ -1,6 +1,7 @@
-import { useCallback, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import { produce } from 'immer';
 import { useEditStore } from '../../state/store';
+import { useT } from '../../i18n/useT';
 import type { EditState } from '../../state/types';
 import { useEditorContext } from '../../context/EditorContextProvider';
 import { downloadExport, exportDocument, type StripReport } from '../../services/export-document';
@@ -8,13 +9,6 @@ import { InspectorSlider } from './InspectorSlider';
 import { Segmented } from './Segmented';
 
 type ExportFormat = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif';
-
-const FORMAT_OPTIONS: readonly { value: ExportFormat; label: string }[] = [
-  { value: 'image/webp', label: 'WebP' },
-  { value: 'image/jpeg', label: 'JPEG' },
-  { value: 'image/png', label: 'PNG' },
-  { value: 'image/avif', label: 'AVIF' },
-];
 
 /**
  * Export panel. Bundles format + quality + resize-max controls plus
@@ -27,7 +21,17 @@ const FORMAT_OPTIONS: readonly { value: ExportFormat; label: string }[] = [
  * audit line communicates the guarantee instead of offering a toggle.
  */
 export function ExportSection() {
+  const t = useT();
   const document = useEditStore((s) => s.document);
+  const formatOptions = useMemo(
+    (): readonly { value: ExportFormat; label: string }[] => [
+      { value: 'image/webp', label: t('export.format.webp') },
+      { value: 'image/jpeg', label: t('export.format.jpeg') },
+      { value: 'image/png', label: t('export.format.png') },
+      { value: 'image/avif', label: t('export.format.avif') },
+    ],
+    [t],
+  );
   const commit = useEditStore((s) => s.commit);
   const ctx = useEditorContext();
 
@@ -106,29 +110,28 @@ export function ExportSection() {
     const doc = useEditStore.getState().document;
     if (!doc || busy) return;
     setBusy(true);
-    setStatus('Rendering…');
+    setStatus(t('export.rendering'));
     try {
       const result = await exportDocument(doc.present, ctx);
       downloadExport(result, doc.present.source.file);
       setLastReport(result.stripped);
       setStatus(
-        `Saved · ${result.width}×${result.height} · ${
-          (result.blob.size / 1024).toFixed(0)
-        } KB · ${result.durationMs.toFixed(0)} ms`,
+        t('export.saved', {
+          w: result.width,
+          h: result.height,
+          kb: (result.blob.size / 1024).toFixed(0),
+          ms: result.durationMs.toFixed(0),
+        }),
       );
     } catch (err) {
-      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus(t('export.error', { message: err instanceof Error ? err.message : String(err) }));
     } finally {
       setBusy(false);
     }
-  }, [ctx, busy]);
+  }, [ctx, busy, t]);
 
   if (!document) return null;
-  const output = document.present.faceBlur
-    ? `${document.present.faceBlur.boxes.length} face-blur ${
-        document.present.faceBlur.boxes.length === 1 ? 'region' : 'regions'
-      }`
-    : null;
+  const faceBoxCount = document.present.faceBlur?.boxes.length ?? 0;
   const { format, quality, resize } = document.present.output;
   const isPng = format === 'image/png';
 
@@ -136,19 +139,19 @@ export function ExportSection() {
     <div className="flex flex-col gap-3 p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
-          Format
+          {t('export.format')}
         </span>
         <Segmented
           value={format}
-          options={FORMAT_OPTIONS}
+          options={formatOptions}
           onChange={setFormat}
-          ariaLabel="Export format"
+          ariaLabel={t('export.format')}
         />
       </div>
 
       <div className={isPng ? 'opacity-40' : ''}>
         <InspectorSlider
-          label={isPng ? 'Quality (PNG is lossless)' : 'Quality'}
+          label={isPng ? t('export.qualityPng') : t('export.quality')}
           value={quality}
           min={0}
           max={1}
@@ -161,13 +164,13 @@ export function ExportSection() {
 
       <div className="flex flex-col gap-1.5">
         <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
-          Max dimensions (leave blank to keep source size)
+          {t('export.maxDims')}
         </span>
         <div className="flex items-center gap-1.5">
           <input
             type="number"
             min="1"
-            placeholder="width"
+            placeholder={t('export.width')}
             value={resize?.maxWidth ?? ''}
             onChange={onMaxWidthChange}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-[var(--font-mono)] text-xs tabular-nums focus:border-[var(--color-accent)] focus:outline-none"
@@ -176,7 +179,7 @@ export function ExportSection() {
           <input
             type="number"
             min="1"
-            placeholder="height"
+            placeholder={t('export.height')}
             value={resize?.maxHeight ?? ''}
             onChange={onMaxHeightChange}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-[var(--font-mono)] text-xs tabular-nums focus:border-[var(--color-accent)] focus:outline-none"
@@ -190,7 +193,7 @@ export function ExportSection() {
         disabled={busy}
         className="mt-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-dim)] px-3 py-2 font-[var(--font-mono)] text-xs font-semibold text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)] hover:text-[var(--color-bg)] disabled:cursor-wait disabled:opacity-60"
       >
-        {busy ? 'Exporting…' : '↓ Export'}
+        {busy ? t('export.busy') : t('export.button')}
       </button>
 
       {status && (
@@ -199,12 +202,11 @@ export function ExportSection() {
 
       <div className="mt-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-accent)]">
-          ✓ {lastReport?.summary ??
-            'All EXIF, GPS, camera-identifying tags, XMP, and embedded thumbnails are stripped on export.'}
+          {lastReport?.summary ?? t('export.stripSummary')}
         </p>
-        {output && (
+        {faceBoxCount > 0 && (
           <p className="mt-1 font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
-            Export will obscure {output}.
+            {t(faceBoxCount === 1 ? 'export.obscuresFaces' : 'export.obscuresFacesPlural', { count: faceBoxCount })}
           </p>
         )}
       </div>

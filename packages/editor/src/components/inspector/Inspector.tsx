@@ -4,6 +4,7 @@ import { useEditStore } from '../../state/store';
 import { useInspectorPrefs } from '../../hooks/useInspectorPrefs';
 import type { SectionId } from '../../state/inspector-prefs';
 import { freshState, isFreshEditState } from '../../state/defaults';
+import { useT } from '../../i18n/useT';
 import { GeometrySection } from './GeometrySection';
 import { ColorSection } from './ColorSection';
 import { DetailSection } from './DetailSection';
@@ -17,6 +18,7 @@ import { ExportSection } from './ExportSection';
  * useInspectorPrefs and survives page reloads.
  */
 export function Inspector() {
+  const t = useT();
   const document = useEditStore((s) => s.document);
   const { prefs, toggleSection } = useInspectorPrefs();
 
@@ -49,16 +51,16 @@ export function Inspector() {
   return (
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elev)]">
       <header className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2 font-[var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--color-muted)]">
-        <span>Inspector</span>
+        <span>{t('inspector.title')}</span>
         <button
           type="button"
           onClick={onReset}
           disabled={!canReset}
-          aria-label="Reset all edits to the original image"
-          title={canReset ? 'Reset all edits (⌘Z to undo)' : 'No edits to reset'}
+          aria-label={t('inspector.reset')}
+          title={canReset ? t('inspector.resetTooltip') : t('inspector.nothingToReset')}
           className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-[var(--color-border)] disabled:hover:text-[var(--color-muted)]"
         >
-          Reset
+          {t('inspector.reset')}
         </button>
       </header>
       <Accordion.Root
@@ -70,7 +72,7 @@ export function Inspector() {
         <Accordion.Item value="geometry" className="border-b border-[var(--color-border)]">
           <Accordion.Header>
             <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
-              <span>Geometry</span>
+              <span>{t('inspector.section.geometry')}</span>
               <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
             </Accordion.Trigger>
           </Accordion.Header>
@@ -82,7 +84,7 @@ export function Inspector() {
         <Accordion.Item value="color">
           <Accordion.Header>
             <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
-              <span>Color</span>
+              <span>{t('inspector.section.color')}</span>
               <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
             </Accordion.Trigger>
           </Accordion.Header>
@@ -94,7 +96,7 @@ export function Inspector() {
         <Accordion.Item value="detail" className="border-t border-[var(--color-border)]">
           <Accordion.Header>
             <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
-              <span>Detail</span>
+              <span>{t('inspector.section.detail')}</span>
               <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
             </Accordion.Trigger>
           </Accordion.Header>
@@ -106,7 +108,7 @@ export function Inspector() {
         <Accordion.Item value="overlay" className="border-t border-[var(--color-border)]">
           <Accordion.Header>
             <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
-              <span>Overlay</span>
+              <span>{t('inspector.section.overlay')}</span>
               <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
             </Accordion.Trigger>
           </Accordion.Header>
@@ -118,7 +120,7 @@ export function Inspector() {
         <Accordion.Item value="export" className="border-t border-[var(--color-border)]">
           <Accordion.Header>
             <Accordion.Trigger className="flex w-full items-center justify-between px-3 py-2 font-[var(--font-mono)] text-xs hover:bg-[var(--color-bg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] data-[state=open]:text-[var(--color-accent)]">
-              <span>Export</span>
+              <span>{t('inspector.section.export')}</span>
               <span aria-hidden="true" className="data-[state=open]:rotate-90">▸</span>
             </Accordion.Trigger>
           </Accordion.Header>

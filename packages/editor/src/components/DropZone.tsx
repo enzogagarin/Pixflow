@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { useEditStore } from '../state/store';
+import { useT } from '../i18n/useT';
 
 /**
  * Minimal file input for PR #4's browser smoke test. Supports both
@@ -15,6 +16,7 @@ import { useEditStore } from '../state/store';
  * file picker, matching native <input type=file> semantics.
  */
 export function DropZone() {
+  const t = useT();
   const loadImage = useEditStore((s) => s.loadImage);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [active, setActive] = useState(false);
@@ -89,9 +91,9 @@ export function DropZone() {
             : 'border-[var(--color-border-strong)] bg-[var(--color-bg-elev-2)] hover:border-[var(--color-accent)]'
         }`}
       >
-        <p className="font-[var(--font-mono)] text-sm">Drop an image</p>
+        <p className="font-[var(--font-mono)] text-sm">{t('dropzone.primary')}</p>
         <p className="mt-1 text-[11px] text-[var(--color-muted)]">
-          or click to browse · everything stays in your browser
+          {t('dropzone.hint')}
         </p>
       </div>
       <input

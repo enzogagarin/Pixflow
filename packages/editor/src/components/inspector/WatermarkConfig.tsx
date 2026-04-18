@@ -1,18 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useEditStore } from '../../state/store';
+import { useT } from '../../i18n/useT';
 import type { EditState, WatermarkSpec } from '../../state/types';
 import type { WatermarkPosition } from 'pixflow';
 import { InspectorSlider } from './InspectorSlider';
 import { Segmented } from './Segmented';
-
-const POSITION_OPTIONS: readonly { value: WatermarkPosition; label: string }[] = [
-  { value: 'top-left', label: 'TL' },
-  { value: 'top-right', label: 'TR' },
-  { value: 'bottom-left', label: 'BL' },
-  { value: 'bottom-right', label: 'BR' },
-  { value: 'center', label: 'C' },
-  { value: 'tile', label: 'Tile' },
-];
 
 const WATERMARK_DEFAULTS = {
   position: 'bottom-right' as WatermarkPosition,
@@ -47,10 +39,23 @@ const WATERMARK_DEFAULTS = {
  * bitmaps; acceptable for a session-only editor.
  */
 export function WatermarkConfig() {
+  const t = useT();
   const watermark = useEditStore((s) => s.document?.present.watermark ?? null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const positionOptions = useMemo(
+    (): readonly { value: WatermarkPosition; label: string }[] => [
+      { value: 'top-left', label: t('watermark.position.topLeft') },
+      { value: 'top-right', label: t('watermark.position.topRight') },
+      { value: 'bottom-left', label: t('watermark.position.bottomLeft') },
+      { value: 'bottom-right', label: t('watermark.position.bottomRight') },
+      { value: 'center', label: t('watermark.position.center') },
+      { value: 'tile', label: t('watermark.position.tile') },
+    ],
+    [t],
+  );
 
   // Derive a thumbnail URL whenever the watermark image changes.
   // We turn the ImageBitmap back into a blob via a canvas just to get a
@@ -147,7 +152,7 @@ export function WatermarkConfig() {
   return (
     <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-[var(--font-mono)] text-xs">Watermark</span>
+        <span className="font-[var(--font-mono)] text-xs">{t('watermark.title')}</span>
         <input
           ref={fileInputRef}
           type="file"
@@ -164,14 +169,14 @@ export function WatermarkConfig() {
               onClick={onPickFile}
               className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
             >
-              Replace
+              {t('watermark.replace')}
             </button>
             <button
               type="button"
               onClick={onRemove}
               className="rounded border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
             >
-              Remove
+              {t('watermark.remove')}
             </button>
           </div>
         ) : (
@@ -180,7 +185,7 @@ export function WatermarkConfig() {
             onClick={onPickFile}
             className="rounded border border-[var(--color-accent)] bg-[var(--color-accent-dim)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] text-[var(--color-accent)] hover:brightness-110"
           >
-            Pick image
+            {t('watermark.pickImage')}
           </button>
         )}
       </div>
@@ -200,17 +205,17 @@ export function WatermarkConfig() {
           )}
           <div className="flex items-center justify-between">
             <span className="font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
-              Position
+              {t('watermark.position')}
             </span>
             <Segmented
               value={watermark.position ?? WATERMARK_DEFAULTS.position}
-              options={POSITION_OPTIONS}
+              options={positionOptions}
               onChange={onPositionChange}
-              ariaLabel="Watermark position"
+              ariaLabel={t('watermark.position')}
             />
           </div>
           <InspectorSlider
-            label="Opacity"
+            label={t('watermark.opacity')}
             value={watermark.opacity ?? WATERMARK_DEFAULTS.opacity}
             min={0}
             max={1}
@@ -220,7 +225,7 @@ export function WatermarkConfig() {
             getNextState={setOpacity}
           />
           <InspectorSlider
-            label="Scale"
+            label={t('watermark.scale')}
             value={watermark.scale ?? WATERMARK_DEFAULTS.scale}
             min={0.05}
             max={1}
@@ -230,7 +235,7 @@ export function WatermarkConfig() {
             getNextState={setScale}
           />
           <InspectorSlider
-            label="Margin"
+            label={t('watermark.margin')}
             value={watermark.margin ?? WATERMARK_DEFAULTS.margin}
             min={0}
             max={100}
