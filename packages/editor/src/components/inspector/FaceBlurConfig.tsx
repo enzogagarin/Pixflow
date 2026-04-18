@@ -240,8 +240,14 @@ export function FaceBlurConfig() {
           </div>
 
           {detectStatus && (
-            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
-              {detectStatus}
+            <p className="flex items-center gap-1.5 font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
+              {detecting && (
+                <span
+                  className="inline-block size-2 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)]"
+                  aria-hidden="true"
+                />
+              )}
+              <span>{detectStatus}</span>
             </p>
           )}
 

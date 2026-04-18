@@ -7,10 +7,14 @@ import { LanguageToggle } from './components/LanguageToggle';
 import { NewImageButton } from './components/NewImageButton';
 import { HelpOverlay } from './components/HelpOverlay';
 import { WebGPUStatus } from './components/WebGPUStatus';
+import { Toast } from './components/Toast';
 import { EditorContextProvider } from './context/EditorContextProvider';
 import { useUndoRedoShortcuts } from './hooks/useUndoRedoShortcuts';
+import { useClipboardPaste } from './hooks/useClipboardPaste';
+import { useUnsavedWarn } from './hooks/useUnsavedWarn';
 import { useEditStore } from './state/store';
 import { useT } from './i18n/useT';
+import { useState, useCallback } from 'react';
 import pixflowPkg from 'pixflow/package.json';
 
 export function App() {
@@ -23,8 +27,18 @@ export function App() {
 
 function AppShell() {
   useUndoRedoShortcuts();
+  useUnsavedWarn();
   const document = useEditStore((s) => s.document);
   const t = useT();
+  const [toast, setToast] = useState<string | null>(null);
+
+  const onClipboardPaste = useCallback(
+    (kind: 'pasted' | 'notImage') => {
+      setToast(t(kind === 'pasted' ? 'clipboard.pasted' : 'clipboard.notImage'));
+    },
+    [t],
+  );
+  useClipboardPaste(onClipboardPaste);
 
   return (
     <main className="flex min-h-screen flex-col gap-4 px-6 py-4">
@@ -68,6 +82,10 @@ function AppShell() {
       </footer>
 
       <HelpOverlay />
+      <Toast
+        message={toast}
+        onDismiss={() => setToast(null)}
+      />
     </main>
   );
 }

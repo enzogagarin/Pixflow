@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isWebGPUSupported } from 'pixflow';
+import { useT } from '../i18n/useT';
+import type { MessageKey } from '../i18n/messages';
 
 type Status =
   | { phase: 'probing' }
@@ -7,6 +9,7 @@ type Status =
   | { phase: 'unsupported' };
 
 export function WebGPUStatus() {
+  const t = useT();
   const [status, setStatus] = useState<Status>({ phase: 'probing' });
 
   useEffect(() => {
@@ -21,37 +24,45 @@ export function WebGPUStatus() {
     };
   }, []);
 
-  const { label, dotClass, textClass } = describe(status);
+  const { labelKey, dotClass, textClass } = describe(status);
 
   return (
     <div
       role="status"
       aria-live="polite"
+      title={status.phase === 'unsupported' ? t('webgpu.suggest') : undefined}
       className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elev)] px-3 py-1.5 font-[var(--font-mono)] text-xs"
     >
       <span className={`h-2 w-2 rounded-full ${dotClass}`} aria-hidden="true" />
-      <span className={textClass}>{label}</span>
+      <span className={textClass}>{t(labelKey)}</span>
+      {status.phase === 'unsupported' && (
+        <span className="text-[10px] text-[var(--color-muted)]">· {t('webgpu.suggest')}</span>
+      )}
     </div>
   );
 }
 
-function describe(s: Status): { label: string; dotClass: string; textClass: string } {
+function describe(s: Status): {
+  labelKey: MessageKey;
+  dotClass: string;
+  textClass: string;
+} {
   switch (s.phase) {
     case 'probing':
       return {
-        label: 'Detecting WebGPU…',
-        dotClass: 'bg-[var(--color-muted)]',
+        labelKey: 'webgpu.ready',
+        dotClass: 'bg-[var(--color-muted)] animate-pulse',
         textClass: 'text-[var(--color-muted)]',
       };
     case 'supported':
       return {
-        label: 'WebGPU ready',
+        labelKey: 'webgpu.ready',
         dotClass: 'bg-[var(--color-accent)]',
         textClass: 'text-[var(--color-fg)]',
       };
     case 'unsupported':
       return {
-        label: 'WebGPU unavailable',
+        labelKey: 'webgpu.unavailable',
         dotClass: 'bg-[var(--color-danger)]',
         textClass: 'text-[var(--color-danger)]',
       };
