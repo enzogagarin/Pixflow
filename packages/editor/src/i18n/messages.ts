@@ -148,7 +148,11 @@ export type MessageKey =
   | 'help.panel.detail'
   | 'help.panel.overlay'
   | 'help.panel.export'
-  | 'help.openHint';
+  | 'help.openHint'
+  // Clipboard + unsaved
+  | 'clipboard.pasted'
+  | 'clipboard.notImage'
+  | 'unsaved.warnTitle';
 
 export type Messages = Record<MessageKey, string>;
 
@@ -240,11 +244,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     'faceBlur.warning': '⚠ {count} alan dışa aktarımda gizlenecek.',
     'faceBlur.warningPlural': '⚠ {count} alan dışa aktarımda gizlenecek.',
     'faceBlur.remove': '{index}. alanı kaldır',
-    'faceBlur.phase.fetchingRuntime': 'Çalışma zamanı yükleniyor…',
-    'faceBlur.phase.fetchingModel': 'Model indiriliyor…',
+    'faceBlur.phase.fetchingRuntime': 'Çalışma zamanı indiriliyor (~25 MB, ilk kezde)…',
+    'faceBlur.phase.fetchingModel': 'Model indiriliyor (~1.2 MB)…',
     'faceBlur.phase.verifyingModel': 'Bütünlük doğrulanıyor…',
     'faceBlur.phase.creatingSession': 'Başlatılıyor…',
-    'faceBlur.phase.ready': 'Tespit ediliyor…',
+    'faceBlur.phase.ready': 'Yüzler taranıyor…',
     'faceBlur.noFaces': 'Yüz bulunamadı.',
     'faceBlur.detected': '{count} yüz bulundu.',
     'faceBlur.detectedPlural': '{count} yüz bulundu.',
@@ -292,6 +296,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     'help.panel.export':
       'Format, kalite, boyut seç; EXIF/GPS otomatik kaldırılır.',
     'help.openHint': '? ile yardımı aç',
+
+    'clipboard.pasted': 'Panodan görsel alındı',
+    'clipboard.notImage': 'Panoda görsel yok',
+    'unsaved.warnTitle':
+      'Kaydedilmemiş değişiklikler var. Sayfadan ayrılmak istediğinden emin misin?',
   },
   en: {
     'app.title': 'Pixflow Editor',
@@ -380,11 +389,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     'faceBlur.warning': '⚠ {count} region will be obscured on export.',
     'faceBlur.warningPlural': '⚠ {count} regions will be obscured on export.',
     'faceBlur.remove': 'Remove region {index}',
-    'faceBlur.phase.fetchingRuntime': 'Loading runtime…',
-    'faceBlur.phase.fetchingModel': 'Fetching model…',
+    'faceBlur.phase.fetchingRuntime': 'Loading runtime (~25 MB, first time only)…',
+    'faceBlur.phase.fetchingModel': 'Fetching model (~1.2 MB)…',
     'faceBlur.phase.verifyingModel': 'Verifying integrity…',
     'faceBlur.phase.creatingSession': 'Initializing…',
-    'faceBlur.phase.ready': 'Detecting…',
+    'faceBlur.phase.ready': 'Scanning for faces…',
     'faceBlur.noFaces': 'No faces detected.',
     'faceBlur.detected': 'Detected {count} face.',
     'faceBlur.detectedPlural': 'Detected {count} faces.',
@@ -430,5 +439,10 @@ export const MESSAGES: Record<Locale, Messages> = {
     'help.panel.export':
       'Choose format, quality, and size; EXIF/GPS are stripped automatically.',
     'help.openHint': 'Press ? for help',
+
+    'clipboard.pasted': 'Image pasted from clipboard',
+    'clipboard.notImage': 'No image on clipboard',
+    'unsaved.warnTitle':
+      'You have unsaved changes. Are you sure you want to leave?',
   },
 };
