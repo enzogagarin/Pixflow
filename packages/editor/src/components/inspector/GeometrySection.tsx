@@ -99,14 +99,12 @@ export function GeometrySection() {
         <span className="font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
           Crop
         </span>
-        <button
-          type="button"
-          disabled
-          title="Crop tool ships in PR #7"
-          className="cursor-not-allowed rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 font-[var(--font-mono)] text-xs text-[var(--color-muted)] opacity-50"
+        <span
+          className="rounded-md border border-dashed border-[var(--color-border)] bg-transparent px-2 py-[2px] font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]"
+          title="Interactive crop tool coming in a later release"
         >
-          Enter crop tool
-        </button>
+          Soon
+        </span>
       </div>
     </div>
   );
